@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Scoreboarder sampling dumps + scratch diagnostics — contain real member IDs / nicknames / an email (PII). Keep local.
+scripts/scoreboarder-sample.json
+scripts/scoreboarder-discovery.json
+scripts/members.json
+scripts/diag-import.mjs
+scripts/*-sample.json
+scripts/*-dump.json
+scripts/scoreboarder-old-census.json
+scripts/scoreboarder-old-sample.json
+
+# the repo-root .gitignore ignores *.sql (db dumps); keep our migrations tracked
+!db/migrations/*.sql
+
+# Real Scoreboarder import config — contains member IDs and name-map (PII). Keep local.
+scripts/scoreboarder-config.json
+
+# Local chart eyeball artifacts (rendered PNGs show real member display names). Keep local.
+.smoke/

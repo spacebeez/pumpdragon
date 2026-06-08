@@ -1,0 +1,11 @@
+services:
+  test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pumpdragon
+      POSTGRES_PASSWORD: pumpdragon
+      POSTGRES_DB: pumpdragon_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
