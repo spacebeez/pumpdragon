@@ -50,7 +50,7 @@ The ceremony includes: a collective "we ascended together" hero-hype lead with t
 | `pushups` | reps | pushups, pushup, push-ups, push-up |
 | `pullups` | reps | pullups, pullup, pull-ups, pull-up, chinups, chin-ups |
 | `core` | min | core, abs, plank, planks |
-| `lifting` | min | lifting, lift, weights, weightlifting, strength |
+| `lifting` | reps | lifting, lift, weights, weightlifting, strength |
 
 Quantities must be whole positive numbers (1–100,000). Fractional values are rounded; anything that rounds below 1 is rejected and noted in the reply. Admin `remove` inserts a negative entry — full history is preserved and auditable.
 

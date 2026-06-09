@@ -13,7 +13,7 @@ export const CATEGORIES: CategoryDef[] = [
   { name: "pushups", unit: "reps", aliases: ["pushups", "pushup", "push-ups", "push-up"] },
   { name: "pullups", unit: "reps", aliases: ["pullups", "pullup", "pull-ups", "pull-up", "chinups", "chin-ups"] },
   { name: "core", unit: "min", aliases: ["core", "abs", "plank", "planks"] },
-  { name: "lifting", unit: "min", aliases: ["lifting", "lift", "weights", "weightlifting", "strength"] },
+  { name: "lifting", unit: "reps", aliases: ["lifting", "lift", "weights", "weightlifting", "strength"] },
 ];
 
 export const CATEGORY_NAMES: Category[] = CATEGORIES.map((c) => c.name);
