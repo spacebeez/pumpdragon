@@ -229,6 +229,13 @@ describe("handleMention new view routing", () => {
     expect(res.embed).toBeDefined();
   });
 
+  it("'board pushups' → that single category's board, not the full scoreboard", async () => {
+    const ctx = baseCtx({ pool: { query: boardQuery() } as never });
+    const res = await handleMention("board pushups", ctx);
+    expect(ctx.parse).not.toHaveBeenCalled();
+    expect(JSON.stringify(res.embed?.toJSON())).toContain("pushups — this month");
+  });
+
   it("'me' → stats card, no parse", async () => {
     const ctx = baseCtx({ pool: { query: boardQuery() } as never });
     const res = await handleMention("me", ctx);

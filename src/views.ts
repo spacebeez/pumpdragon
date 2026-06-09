@@ -10,6 +10,17 @@ export function categoryViewOf(text: string): Category | null {
   return findCategory(t);
 }
 
+const BOARD_WORD_RE = /^(board|scoreboard|standings|leaderboard|scores|ranks?|rankings?)\s+/i;
+
+/** A category when the text is a board synonym followed by exactly a category word
+ *  (e.g. "board pushups", "scoreboard cardio"). Null if there's no leading board word, or the
+ *  remainder isn't a single category (e.g. "board last month" → null, handled as a windowed board). */
+export function boardCategoryOf(text: string): Category | null {
+  const t = text.trim();
+  if (!BOARD_WORD_RE.test(t)) return null;
+  return categoryViewOf(t.replace(BOARD_WORD_RE, ""));
+}
+
 export type StatsRequest = { self: true } | { self: false; userId: string };
 
 /** `me` / `stats` / `stats @user` → a stats request; else null. */

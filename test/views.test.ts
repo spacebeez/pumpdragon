@@ -88,3 +88,22 @@ describe("isInsightsRequest", () => {
     expect(isInsightsRequest("board")).toBe(false);
   });
 });
+
+import { boardCategoryOf } from "../src/views.js";
+
+describe("boardCategoryOf", () => {
+  it("resolves a board word + category to that category", () => {
+    expect(boardCategoryOf("board pushups")).toBe("pushups");
+    expect(boardCategoryOf("scoreboard cardio")).toBe("cardio");
+    expect(boardCategoryOf("board pullups")).toBe("pullups");
+    expect(boardCategoryOf("leaderboard abs")).toBe("core"); // alias resolves
+  });
+  it("is null without a leading board word (bare category handled elsewhere)", () => {
+    expect(boardCategoryOf("pushups")).toBeNull();
+  });
+  it("is null when the remainder isn't a single category", () => {
+    expect(boardCategoryOf("board last month")).toBeNull();
+    expect(boardCategoryOf("board may")).toBeNull();
+    expect(boardCategoryOf("board")).toBeNull();
+  });
+});

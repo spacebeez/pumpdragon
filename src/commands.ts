@@ -11,7 +11,7 @@ import { isHype, powerMeter } from "./scoring.js";
 import { parseAdminCommand, isAdmin, executeAdmin } from "./admin.js";
 import { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getCumulativeMonthlySeries, getGroupMonthlyByUser, getOverallStandings, type CumulativeSeriesRow, type UserMonthQtyRow } from "./db/queries.js";
 import type { ConverseInput } from "./converse.js";
-import { categoryViewOf, parseStatsRequest, isHelpRequest, parseChartRequest, isInsightsRequest } from "./views.js";
+import { categoryViewOf, boardCategoryOf, parseStatsRequest, isHelpRequest, parseChartRequest, isInsightsRequest } from "./views.js";
 import { parseTimeWindow } from "./timewindow.js";
 import { buildRaceReply, buildTrendReply, buildMonthsReply } from "./chart/build.js";
 import { buildInsightsEmbed } from "./insights.js";
@@ -157,6 +157,12 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     return chart.kind === "race"
       ? await buildRaceReply(ctx.pool, ctx.config, chart.category, names, now, rows as CumulativeSeriesRow[])
       : await buildMonthsReply(ctx.pool, ctx.config, chart.category, names, now, rows as UserMonthQtyRow[]);
+  }
+
+  // "board pushups" / "scoreboard cardio" → that single category's board (must precede the generic board match)
+  const boardCat = boardCategoryOf(text);
+  if (boardCat) {
+    return { embed: await buildCategoryBoardEmbed(ctx.pool, ctx.config, ctx.renderer, boardCat, `🐉 ${boardCat} — this month`) };
   }
 
   const now = (ctx.now ?? (() => new Date()))();
