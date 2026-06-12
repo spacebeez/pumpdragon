@@ -22,6 +22,9 @@ export class EmbedRenderer implements Renderer {
     }
     if (p.hypeLine) desc += `\n\n${p.hypeLine}`;
     embed.setDescription(desc);
+    if (p.achievements?.length) {
+      embed.addFields({ name: "🏅 ACHIEVEMENT UNLOCKED", value: p.achievements.join("\n"), inline: false });
+    }
     return embed;
   }
 

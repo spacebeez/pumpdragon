@@ -168,3 +168,25 @@ describe("EmbedRenderer ceremony", () => {
     expect(e.fields).toHaveLength(1);
   });
 });
+
+describe("logReply achievements", () => {
+  it("renders an ACHIEVEMENT UNLOCKED field when achievements are present", () => {
+    const r = new EmbedRenderer();
+    const embed = r.logReply({
+      loggedBy: "Matt",
+      logged: [{ category: "pushups", quantity: 600, userMonthlyTotal: 600, unit: "reps" }],
+      unparsed: [],
+      hypeLine: null,
+      powerMeterText: "meter",
+      achievements: ["🏔️ crossed **500 pushups**"],
+    });
+    const json = JSON.stringify(embed.toJSON());
+    expect(json).toContain("ACHIEVEMENT UNLOCKED");
+    expect(json).toContain("500 pushups");
+  });
+  it("omits the field when there are no achievements", () => {
+    const r = new EmbedRenderer();
+    const embed = r.logReply({ loggedBy: "Matt", logged: [], unparsed: [], hypeLine: null, powerMeterText: "meter" });
+    expect(JSON.stringify(embed.toJSON())).not.toContain("ACHIEVEMENT UNLOCKED");
+  });
+});

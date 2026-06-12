@@ -13,6 +13,9 @@ function baseCtx(over: Partial<Parameters<typeof handleMention>[1]> = {}) {
       insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 50, userMonthlyTotal: 50, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]),
       getCurrentMonthCombinedTotal: vi.fn(async () => 50),
       getCurrentGoal: vi.fn(async () => null),
+      getMonthEntryCount: vi.fn(async () => 5),
+      getUserMonthCategoryCount: vi.fn(async () => 1),
+      insertAchievement: vi.fn(async () => false),
     } as never,
     member: { permissions: { has: () => true }, roles: { cache: { has: () => false } } } as never,
     authorId: "u1",
@@ -262,10 +265,52 @@ describe("handleMention new view routing", () => {
         insertEntries: vi.fn(async () => [{ category: "cardio", quantity: 100, userMonthlyTotal: 100, trailingAverage: 10, priorCount: 5, hype: false, detail: "trail running" }]),
         getCurrentMonthCombinedTotal: vi.fn(async () => 100),
         getCurrentGoal: vi.fn(async () => null),
+        getMonthEntryCount: vi.fn(async () => 5),
+        getUserMonthCategoryCount: vi.fn(async () => 1),
+        insertAchievement: vi.fn(async () => false),
       } as never,
       parse: vi.fn(async () => ({ items: [{ category: "cardio", quantity: 100, detail: "trail running" }], unparsed: [] })) as never,
     });
     const res = await handleMention("ran 100 min trail running", ctx);
     expect(JSON.stringify(res.embed?.toJSON())).toContain("trail running");
+  });
+});
+
+describe("achievement awards on log", () => {
+  function achDb(over: Record<string, unknown> = {}) {
+    return {
+      insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 600, userMonthlyTotal: 600, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]),
+      getCurrentMonthCombinedTotal: vi.fn(async () => 600),
+      getCurrentGoal: vi.fn(async () => null),
+      getMonthEntryCount: vi.fn(async () => 5),
+      getUserMonthCategoryCount: vi.fn(async () => 1),
+      insertAchievement: vi.fn(async () => true),
+      ...over,
+    } as never;
+  }
+
+  it("a log that crosses a milestone renders the achievement flare", async () => {
+    const ctx = baseCtx({ pool: {} as never, parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 600, detail: null }], unparsed: [] })) as never, db: achDb() });
+    const res = await handleMention("600 pushups", ctx);
+    const json = JSON.stringify(res.embed?.toJSON());
+    expect(json).toContain("ACHIEVEMENT UNLOCKED");
+    expect(json).toContain("500 pushups");
+  });
+
+  it("a normal log (no crossing) renders no achievement field", async () => {
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 50, detail: null }], unparsed: [] })) as never,
+      db: achDb({ insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 50, userMonthlyTotal: 50, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 50) }),
+    });
+    const res = await handleMention("50 pushups", ctx);
+    expect(JSON.stringify(res.embed?.toJSON())).not.toContain("ACHIEVEMENT UNLOCKED");
+  });
+
+  it("an error during achievement detection still returns the normal log embed", async () => {
+    const ctx = baseCtx({ pool: {} as never, parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 600, detail: null }], unparsed: [] })) as never, db: achDb({ getMonthEntryCount: vi.fn(async () => { throw new Error("boom"); }) }) });
+    const res = await handleMention("600 pushups", ctx);
+    expect(res.embed).toBeDefined();
+    expect(JSON.stringify(res.embed?.toJSON())).not.toContain("ACHIEVEMENT UNLOCKED");
   });
 });

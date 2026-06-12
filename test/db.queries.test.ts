@@ -5,6 +5,7 @@ import {
   insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, setGoal, getStandings,
   getOverallStandings, insertAdminEntry, getGoalForMonth, getRecentDetails, insertImportRows,
   getCumulativeMonthlySeries, getUserMonthlySeries, getGroupMonthlyByUser,
+  getMonthEntryCount, getUserMonthCategoryCount, insertAchievement,
 } from "../src/db/queries.js";
 
 const url = process.env.DATABASE_URL_TEST ?? "postgres://pumpdragon:pumpdragon@localhost:5433/pumpdragon_test";
@@ -16,7 +17,7 @@ beforeAll(async () => {
   await runMigrations(pool);
 });
 beforeEach(async () => {
-  await pool.query("TRUNCATE entries; DELETE FROM monthly_goals;");
+  await pool.query("TRUNCATE entries; TRUNCATE achievements; DELETE FROM monthly_goals;");
 });
 
 describe("insertEntries", () => {
@@ -221,5 +222,34 @@ describe("getGroupMonthlyByUser", () => {
     const rows = await getGroupMonthlyByUser(pool, G, TZ, "lifting");
     expect(rows).toContainEqual({ month: "2025-01", userId: "u1", qty: 20 });
     expect(rows).toContainEqual({ month: "2025-01", userId: "u2", qty: 35 });
+  });
+});
+
+describe("getMonthEntryCount", () => {
+  it("counts this month's entries for the guild", async () => {
+    await insertEntries(pool, { guildId: G, userId: "u1", messageId: null, items: [{ category: "pushups", quantity: 5, detail: null }], timezone: TZ });
+    await insertEntries(pool, { guildId: G, userId: "u2", messageId: null, items: [{ category: "cardio", quantity: 5, detail: null }], timezone: TZ });
+    expect(await getMonthEntryCount(pool, G, TZ)).toBe(2);
+  });
+});
+
+describe("getUserMonthCategoryCount", () => {
+  it("counts distinct categories the user has positive points in this month", async () => {
+    await insertEntries(pool, { guildId: G, userId: "u1", messageId: null, items: [{ category: "pushups", quantity: 5, detail: null }, { category: "cardio", quantity: 5, detail: null }], timezone: TZ });
+    expect(await getUserMonthCategoryCount(pool, G, TZ, "u1")).toBe(2);
+    expect(await getUserMonthCategoryCount(pool, G, TZ, "u2")).toBe(0);
+  });
+});
+
+describe("insertAchievement", () => {
+  it("returns true the first time and false on a duplicate (per scope)", async () => {
+    expect(await insertAchievement(pool, { guildId: G, userId: "u1", key: "milestone:pushups:500", periodKey: "2026-06" })).toBe(true);
+    expect(await insertAchievement(pool, { guildId: G, userId: "u1", key: "milestone:pushups:500", periodKey: "2026-06" })).toBe(false);
+    // a different period is a fresh award
+    expect(await insertAchievement(pool, { guildId: G, userId: "u1", key: "milestone:pushups:500", periodKey: "2026-07" })).toBe(true);
+  });
+  it("dedups group rows (NULL user) by (key, period)", async () => {
+    expect(await insertAchievement(pool, { guildId: G, userId: null, key: "over_9000", periodKey: "2026-06" })).toBe(true);
+    expect(await insertAchievement(pool, { guildId: G, userId: null, key: "over_9000", periodKey: "2026-06" })).toBe(false);
   });
 });

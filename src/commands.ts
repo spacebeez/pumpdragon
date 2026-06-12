@@ -2,19 +2,20 @@ import type { GuildMember } from "discord.js";
 import type { Pool } from "./db/pool.js";
 import type { Config } from "./config.js";
 import type { Renderer, LoggedLine, Reply } from "./renderer/types.js";
-import type { ParseResult } from "./types.js";
+import type { ParseResult, LogResultRow } from "./types.js";
 import { unitFor } from "./categories.js";
 import { isHypeRequest, randomHypePhrase } from "./hype.js";
 import { buildScoreboardEmbed, buildCategoryBoardEmbed, buildStatsCardEmbed, buildCeremonyEmbed } from "./scoreboard.js";
 import { lastCompletedMonth } from "./deltas.js";
 import { isHype, powerMeter } from "./scoring.js";
 import { parseAdminCommand, isAdmin, executeAdmin } from "./admin.js";
-import { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getCumulativeMonthlySeries, getGroupMonthlyByUser, getOverallStandings, type CumulativeSeriesRow, type UserMonthQtyRow } from "./db/queries.js";
+import { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getCumulativeMonthlySeries, getGroupMonthlyByUser, getOverallStandings, getMonthEntryCount, getUserMonthCategoryCount, insertAchievement, type CumulativeSeriesRow, type UserMonthQtyRow } from "./db/queries.js";
 import type { ConverseInput } from "./converse.js";
 import { categoryViewOf, boardCategoryOf, parseStatsRequest, isHelpRequest, parseChartRequest, isInsightsRequest } from "./views.js";
 import { parseTimeWindow } from "./timewindow.js";
 import { buildRaceReply, buildTrendReply, buildMonthsReply } from "./chart/build.js";
 import { buildInsightsEmbed } from "./insights.js";
+import { evaluateAchievements, type AchievementContext } from "./achievements.js";
 
 export interface MentionCtx {
   renderer: Renderer;
@@ -25,6 +26,9 @@ export interface MentionCtx {
     insertEntries: typeof insertEntries;
     getCurrentMonthCombinedTotal: typeof getCurrentMonthCombinedTotal;
     getCurrentGoal: typeof getCurrentGoal;
+    getMonthEntryCount: typeof getMonthEntryCount;
+    getUserMonthCategoryCount: typeof getUserMonthCategoryCount;
+    insertAchievement: typeof insertAchievement;
   };
   member: GuildMember;
   authorId: string;
@@ -63,6 +67,47 @@ export async function resolveNames(member: GuildMember, ids: string[]): Promise<
   return out;
 }
 
+type DbBag = NonNullable<MentionCtx["db"]>;
+
+/** Build the achievement context from this log, evaluate, write newly-earned rows, return flare lines.
+ *  Wrapped so a detection failure NEVER breaks the log reply. `groupMonthAfter` is the post-log group total. */
+async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[], groupMonthAfter: number): Promise<string[]> {
+  try {
+    const now = (ctx.now ?? (() => new Date()))();
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: ctx.config.timezone, year: "numeric", month: "2-digit" }).formatToParts(now);
+    const periodKey = `${parts.find((p) => p.type === "year")!.value}-${parts.find((p) => p.type === "month")!.value}`;
+    const loggedQty = rows.reduce((s, r) => s + r.quantity, 0);
+    const [monthCount, userCats] = await Promise.all([
+      db.getMonthEntryCount(ctx.pool, ctx.config.guildId, ctx.config.timezone),
+      db.getUserMonthCategoryCount(ctx.pool, ctx.config.guildId, ctx.config.timezone, ctx.authorId),
+    ]);
+    const context: AchievementContext = {
+      userId: ctx.authorId,
+      periodKey,
+      logged: rows.map((r) => ({ category: r.category, quantity: r.quantity, monthTotalAfter: r.userMonthlyTotal })),
+      groupMonthBefore: groupMonthAfter - loggedQty,
+      groupMonthAfter,
+      monthEntryCountBefore: monthCount - rows.length,
+      userCategoriesAfter: userCats,
+      addedNewCategory: rows.some((r) => r.userMonthlyTotal === r.quantity),
+    };
+    const flares: string[] = [];
+    for (const a of evaluateAchievements(context)) {
+      const earned = await db.insertAchievement(ctx.pool, {
+        guildId: ctx.config.guildId,
+        userId: a.scope === "group" ? null : ctx.authorId,
+        key: a.key,
+        periodKey,
+      });
+      if (earned) flares.push(a.flare);
+    }
+    return flares;
+  } catch (e) {
+    console.error("[pumpdragon] achievement detection error:", e);
+    return [];
+  }
+}
+
 async function converseReply(ctx: MentionCtx, text: string): Promise<Reply> {
   if (!ctx.converse) {
     return { content: `🐉 didn't catch that — try e.g. "50 pushups and 20 min cardio".` };
@@ -91,7 +136,7 @@ async function converseReply(ctx: MentionCtx, text: string): Promise<Reply> {
 }
 
 export async function handleMention(rest: string, ctx: MentionCtx): Promise<Reply> {
-  const db = ctx.db ?? { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal };
+  const db = ctx.db ?? { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getMonthEntryCount, getUserMonthCategoryCount, insertAchievement };
   const text = rest.trim();
 
   if (text === "" || text.toLowerCase() === "ping") {
@@ -196,6 +241,7 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     db.getCurrentGoal(ctx.pool, ctx.config.guildId, ctx.config.timezone),
   ]);
   const pm = powerMeter(total, goal);
+  const achievements = await awardAchievements(ctx, db, rows, total);
 
   const embed = ctx.renderer.logReply({
     loggedBy: ctx.authorName,
@@ -203,6 +249,7 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     unparsed: parsed.unparsed,
     hypeLine: hypeRow ? randomHypePhrase(Math.random, hypeRow.detail) : null,
     powerMeterText: pm.text,
+    achievements,
   });
   return { embed };
 }

@@ -15,6 +15,8 @@ export interface LogReplyPayload {
   unparsed: string[];
   hypeLine: string | null;
   powerMeterText: string;
+  /** Flare lines for achievements unlocked by this log (rendered as one highlighted field). */
+  achievements?: string[];
 }
 
 export interface StandingsGroup {

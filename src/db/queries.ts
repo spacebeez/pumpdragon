@@ -261,3 +261,36 @@ export async function getGroupMonthlyByUser(
   );
   return r.rows.map((row) => ({ month: row.month, userId: row.user_id, qty: Number(row.qty) }));
 }
+
+/** Count of all entries in the current month for the guild (any source). */
+export async function getMonthEntryCount(pool: Pool, guildId: string, tz: string): Promise<number> {
+  const r = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::int AS count FROM entries WHERE guild_id=$1 AND ${MONTH(tz)}`,
+    [guildId],
+  );
+  return Number(r.rows[0]!.count);
+}
+
+/** Distinct categories the user has a positive month total in (this month). */
+export async function getUserMonthCategoryCount(pool: Pool, guildId: string, tz: string, userId: string): Promise<number> {
+  const r = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::int AS count FROM (
+       SELECT category FROM entries WHERE guild_id=$1 AND discord_user_id=$2 AND ${MONTH(tz)}
+       GROUP BY category HAVING SUM(quantity) > 0
+     ) t`,
+    [guildId, userId],
+  );
+  return Number(r.rows[0]!.count);
+}
+
+export interface AchievementInsert { guildId: string; userId: string | null; key: string; periodKey: string; }
+
+/** Insert an earned achievement; returns true iff it was newly created (false on the unique conflict). */
+export async function insertAchievement(pool: Pool, a: AchievementInsert): Promise<boolean> {
+  const r = await pool.query(
+    `INSERT INTO achievements (guild_id, discord_user_id, achievement_key, period_key)
+     VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+    [a.guildId, a.userId, a.key, a.periodKey],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
