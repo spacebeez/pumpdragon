@@ -3,13 +3,13 @@ import type { Pool } from "./db/pool.js";
 import type { Config } from "./config.js";
 import type { Renderer, LoggedLine, Reply } from "./renderer/types.js";
 import type { ParseResult, LogResultRow } from "./types.js";
-import { unitFor } from "./categories.js";
+import { unitFor, type Category } from "./categories.js";
 import { isHypeRequest, randomHypePhrase } from "./hype.js";
 import { buildScoreboardEmbed, buildCategoryBoardEmbed, buildStatsCardEmbed, buildCeremonyEmbed } from "./scoreboard.js";
 import { lastCompletedMonth } from "./deltas.js";
 import { isHype, powerMeter } from "./scoring.js";
 import { parseAdminCommand, isAdmin, executeAdmin } from "./admin.js";
-import { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getCumulativeMonthlySeries, getGroupMonthlyByUser, getOverallStandings, getMonthEntryCount, getUserMonthCategoryCount, insertAchievement, type CumulativeSeriesRow, type UserMonthQtyRow } from "./db/queries.js";
+import { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getCumulativeMonthlySeries, getGroupMonthlyByUser, getOverallStandings, getMonthEntryCount, getUserMonthCategoryCount, insertAchievement, getStandings, getUserPrevEntryTime, type CumulativeSeriesRow, type UserMonthQtyRow } from "./db/queries.js";
 import type { ConverseInput } from "./converse.js";
 import { categoryViewOf, boardCategoryOf, parseStatsRequest, isHelpRequest, parseChartRequest, isInsightsRequest } from "./views.js";
 import { parseTimeWindow } from "./timewindow.js";
@@ -29,6 +29,8 @@ export interface MentionCtx {
     getMonthEntryCount: typeof getMonthEntryCount;
     getUserMonthCategoryCount: typeof getUserMonthCategoryCount;
     insertAchievement: typeof insertAchievement;
+    getStandings: typeof getStandings;
+    getUserPrevEntryTime: typeof getUserPrevEntryTime;
   };
   member: GuildMember;
   authorId: string;
@@ -70,17 +72,39 @@ export async function resolveNames(member: GuildMember, ids: string[]): Promise<
 type DbBag = NonNullable<MentionCtx["db"]>;
 
 /** Build the achievement context from this log, evaluate, write newly-earned rows, return flare lines.
- *  Wrapped so a detection failure NEVER breaks the log reply. `groupMonthAfter` is the post-log group total. */
-async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[], groupMonthAfter: number): Promise<string[]> {
+ *  Wrapped so a detection failure NEVER breaks the log reply. `groupMonthAfter` is the post-log group total.
+ *  `prevEntryTime` is the user's most recent entry timestamp captured BEFORE this log's insert. */
+async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[], groupMonthAfter: number, prevEntryTime: Date | null): Promise<string[]> {
   try {
     const now = (ctx.now ?? (() => new Date()))();
-    const parts = new Intl.DateTimeFormat("en-US", { timeZone: ctx.config.timezone, year: "numeric", month: "2-digit" }).formatToParts(now);
-    const periodKey = `${parts.find((p) => p.type === "year")!.value}-${parts.find((p) => p.type === "month")!.value}`;
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: ctx.config.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+    const yr = parts.find((p) => p.type === "year")!.value;
+    const mo = parts.find((p) => p.type === "month")!.value;
+    const day = parts.find((p) => p.type === "day")!.value;
+    const periodKey = `${yr}-${mo}`;
+    const localDateKey = `${yr}-${mo}-${day}`;
+    const loggedHourLocal = parseInt(new Intl.DateTimeFormat("en-US", { timeZone: ctx.config.timezone, hour: "2-digit", hourCycle: "h23" }).format(now), 10);
+    const daysSincePrevEntry = prevEntryTime ? Math.floor((now.getTime() - prevEntryTime.getTime()) / 86_400_000) : null;
     const loggedQty = rows.reduce((s, r) => s + r.quantity, 0);
-    const [monthCount, userCats] = await Promise.all([
+
+    const [monthCount, userCats, standings] = await Promise.all([
       db.getMonthEntryCount(ctx.pool, ctx.config.guildId, ctx.config.timezone),
       db.getUserMonthCategoryCount(ctx.pool, ctx.config.guildId, ctx.config.timezone, ctx.authorId),
+      db.getStandings(ctx.pool, ctx.config.guildId, ctx.config.timezone),
     ]);
+
+    // Reconstruct the per-category #1 BEFORE this log by subtracting the logger's delta from their standing.
+    const priorCategoryLeader: Partial<Record<Category, { userId: string; total: number }>> = {};
+    for (const r of rows) {
+      const catRows = standings.filter((s) => s.category === r.category);
+      let best: { userId: string; total: number } | null = null;
+      for (const s of catRows) {
+        const before = s.userId === ctx.authorId ? s.total - r.quantity : s.total;
+        if (before > 0 && (!best || before > best.total)) best = { userId: s.userId, total: before };
+      }
+      if (best) priorCategoryLeader[r.category] = best;
+    }
+
     const context: AchievementContext = {
       userId: ctx.authorId,
       periodKey,
@@ -90,6 +114,10 @@ async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[
       monthEntryCountBefore: monthCount - rows.length,
       userCategoriesAfter: userCats,
       addedNewCategory: rows.some((r) => r.userMonthlyTotal === r.quantity),
+      loggedHourLocal,
+      localDateKey,
+      daysSincePrevEntry,
+      priorCategoryLeader,
     };
     const flares: string[] = [];
     for (const a of evaluateAchievements(context)) {
@@ -97,7 +125,7 @@ async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[
         guildId: ctx.config.guildId,
         userId: a.scope === "group" ? null : ctx.authorId,
         key: a.key,
-        periodKey,
+        periodKey: a.periodKey ?? periodKey,
       });
       if (earned) flares.push(a.flare);
     }
@@ -136,7 +164,7 @@ async function converseReply(ctx: MentionCtx, text: string): Promise<Reply> {
 }
 
 export async function handleMention(rest: string, ctx: MentionCtx): Promise<Reply> {
-  const db = ctx.db ?? { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getMonthEntryCount, getUserMonthCategoryCount, insertAchievement };
+  const db = ctx.db ?? { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getMonthEntryCount, getUserMonthCategoryCount, insertAchievement, getStandings, getUserPrevEntryTime };
   const text = rest.trim();
 
   if (text === "" || text.toLowerCase() === "ping") {
@@ -226,6 +254,7 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     return await converseReply(ctx, text);
   }
 
+  const prevEntryTime = await db.getUserPrevEntryTime(ctx.pool, ctx.config.guildId, ctx.authorId).catch(() => null);
   const rows = await db.insertEntries(ctx.pool, {
     guildId: ctx.config.guildId, userId: ctx.authorId, messageId: ctx.messageId, items: parsed.items, timezone: ctx.config.timezone,
   });
@@ -241,7 +270,7 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     db.getCurrentGoal(ctx.pool, ctx.config.guildId, ctx.config.timezone),
   ]);
   const pm = powerMeter(total, goal);
-  const achievements = await awardAchievements(ctx, db, rows, total);
+  const achievements = await awardAchievements(ctx, db, rows, total, prevEntryTime);
 
   const embed = ctx.renderer.logReply({
     loggedBy: ctx.authorName,

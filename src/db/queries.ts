@@ -294,3 +294,14 @@ export async function insertAchievement(pool: Pool, a: AchievementInsert): Promi
   );
   return (r.rowCount ?? 0) > 0;
 }
+
+/** Most recent real-activity entry timestamp for a user (user logs + imports; excludes admin
+ *  corrections, whose now()-stamped writes would otherwise mask a genuine comeback gap), or null. */
+export async function getUserPrevEntryTime(pool: Pool, guildId: string, userId: string): Promise<Date | null> {
+  const r = await pool.query<{ created_at: Date | null }>(
+    `SELECT MAX(created_at) AS created_at FROM entries
+     WHERE guild_id=$1 AND discord_user_id=$2 AND source IN ('user','import')`,
+    [guildId, userId],
+  );
+  return r.rows[0]?.created_at ?? null;
+}

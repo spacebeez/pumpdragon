@@ -5,7 +5,7 @@ import {
   insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, setGoal, getStandings,
   getOverallStandings, insertAdminEntry, getGoalForMonth, getRecentDetails, insertImportRows,
   getCumulativeMonthlySeries, getUserMonthlySeries, getGroupMonthlyByUser,
-  getMonthEntryCount, getUserMonthCategoryCount, insertAchievement,
+  getMonthEntryCount, getUserMonthCategoryCount, insertAchievement, getUserPrevEntryTime,
 } from "../src/db/queries.js";
 
 const url = process.env.DATABASE_URL_TEST ?? "postgres://pumpdragon:pumpdragon@localhost:5433/pumpdragon_test";
@@ -251,5 +251,34 @@ describe("insertAchievement", () => {
   it("dedups group rows (NULL user) by (key, period)", async () => {
     expect(await insertAchievement(pool, { guildId: G, userId: null, key: "over_9000", periodKey: "2026-06" })).toBe(true);
     expect(await insertAchievement(pool, { guildId: G, userId: null, key: "over_9000", periodKey: "2026-06" })).toBe(false);
+  });
+});
+
+describe("getUserPrevEntryTime", () => {
+  it("returns null when the user has no entries", async () => {
+    expect(await getUserPrevEntryTime(pool, G, "nobody")).toBeNull();
+  });
+  it("returns the most recent created_at for the user", async () => {
+    await pool.query(
+      `INSERT INTO entries (guild_id, discord_user_id, discord_message_id, category, quantity, source, created_at)
+       VALUES ($1,'u1','e1','pushups',10,'user', now() - interval '5 days'),
+              ($1,'u1','e2','pushups',10,'user', now() - interval '1 day')`,
+      [G],
+    );
+    const t = await getUserPrevEntryTime(pool, G, "u1");
+    expect(t).toBeInstanceOf(Date);
+    // most recent is ~1 day ago, comfortably within the last 2 days
+    expect(Date.now() - t!.getTime()).toBeLessThan(2 * 86_400_000);
+  });
+  it("ignores admin corrections so a today-stamped admin edit can't mask a real gap", async () => {
+    await pool.query(
+      `INSERT INTO entries (guild_id, discord_user_id, discord_message_id, category, quantity, source, created_at)
+       VALUES ($1,'u1','e1','pushups',10,'user', now() - interval '20 days'),
+              ($1,'u1',NULL,'pushups',50,'admin_add', now())`,
+      [G],
+    );
+    const t = await getUserPrevEntryTime(pool, G, "u1");
+    // should reflect the 20-day-old USER log, not today's admin entry
+    expect(Date.now() - t!.getTime()).toBeGreaterThan(19 * 86_400_000);
   });
 });

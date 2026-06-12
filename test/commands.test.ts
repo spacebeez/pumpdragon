@@ -16,6 +16,8 @@ function baseCtx(over: Partial<Parameters<typeof handleMention>[1]> = {}) {
       getMonthEntryCount: vi.fn(async () => 5),
       getUserMonthCategoryCount: vi.fn(async () => 1),
       insertAchievement: vi.fn(async () => false),
+      getStandings: vi.fn(async () => []),
+      getUserPrevEntryTime: vi.fn(async () => null),
     } as never,
     member: { permissions: { has: () => true }, roles: { cache: { has: () => false } } } as never,
     authorId: "u1",
@@ -63,6 +65,7 @@ describe("handleMention routing", () => {
         insertEntries: vi.fn(async () => []),
         getCurrentMonthCombinedTotal: vi.fn(async () => 0),
         getCurrentGoal: vi.fn(async () => null),
+        getUserPrevEntryTime: vi.fn(async () => null),
       } as never,
     });
     const res = await handleMention("50 pushups", ctx);
@@ -268,6 +271,8 @@ describe("handleMention new view routing", () => {
         getMonthEntryCount: vi.fn(async () => 5),
         getUserMonthCategoryCount: vi.fn(async () => 1),
         insertAchievement: vi.fn(async () => false),
+        getStandings: vi.fn(async () => []),
+        getUserPrevEntryTime: vi.fn(async () => null),
       } as never,
       parse: vi.fn(async () => ({ items: [{ category: "cardio", quantity: 100, detail: "trail running" }], unparsed: [] })) as never,
     });
@@ -285,6 +290,8 @@ describe("achievement awards on log", () => {
       getMonthEntryCount: vi.fn(async () => 5),
       getUserMonthCategoryCount: vi.fn(async () => 1),
       insertAchievement: vi.fn(async () => true),
+      getStandings: vi.fn(async () => []),
+      getUserPrevEntryTime: vi.fn(async () => null),
       ...over,
     } as never;
   }
@@ -312,5 +319,36 @@ describe("achievement awards on log", () => {
     const res = await handleMention("600 pushups", ctx);
     expect(res.embed).toBeDefined();
     expect(JSON.stringify(res.embed?.toJSON())).not.toContain("ACHIEVEMENT UNLOCKED");
+  });
+
+  it("fires THE 3 A.M. CONFESSIONAL when logged at local hour 3", async () => {
+    // 03:xx America/Chicago in June (CDT, UTC-5) == 08:xx UTC
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 50, detail: null }], unparsed: [] })) as never,
+      db: achDb({ insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 50, userMonthlyTotal: 50, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 50) }),
+      now: () => new Date("2026-06-12T08:30:00Z"),
+    } as never);
+    const res = await handleMention("50 pushups", ctx);
+    expect(JSON.stringify(res.embed?.toJSON())).toContain("CONFESSIONAL");
+  });
+
+  it("fires REGICIDE when the logger passes the prior category #1", async () => {
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "cardio", quantity: 100, detail: null }], unparsed: [] })) as never,
+      db: achDb({
+        insertEntries: vi.fn(async () => [{ category: "cardio", quantity: 100, userMonthlyTotal: 600, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]),
+        getCurrentMonthCombinedTotal: vi.fn(async () => 1180),
+        getStandings: vi.fn(async () => [
+          { category: "cardio", userId: "u1", total: 600 },
+          { category: "cardio", userId: "u2", total: 580 },
+        ]),
+      }),
+    } as never);
+    const res = await handleMention("100 min cardio", ctx);
+    const json = JSON.stringify(res.embed?.toJSON());
+    expect(json).toContain("REGICIDE");
+    expect(json).toContain("<@u2>");
   });
 });
