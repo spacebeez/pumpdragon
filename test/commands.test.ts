@@ -177,7 +177,7 @@ function convoCtx(over: Partial<Parameters<typeof handleMention>[1]> = {}) {
     parse: vi.fn(async () => ({ items: [], unparsed: ["chatter"] })) as never, // force the conversation path
     config: { guildId: "g", timezone: "America/Chicago", adminRoleIds: [], roastUserId: "MAGIC", roastNickname: "magic" } as never,
     member: { displayName: "Matt", guild: { members: { cache: { get: () => undefined }, fetch: vi.fn(async () => new Map()) } }, permissions: { has: () => true }, roles: { cache: { has: () => false } } } as never,
-    converse: vi.fn(async () => "🐉 hype reply") as never,
+    converse: vi.fn(async () => ({ kind: "chat", text: "🐉 hype reply" })) as never,
     fetchRecentMessages: vi.fn(async () => []) as never,
     ...over,
   });
@@ -211,6 +211,71 @@ describe("conversation routing", () => {
     const ctx = convoCtx({ converse: undefined });
     const res = await handleMention("yo dragon", ctx);
     expect(res.content).toMatch(/didn't catch that/i);
+  });
+});
+
+describe("natural-language command routing", () => {
+  const viewQuery = () => vi.fn(async (sql: string) => {
+    if (/monthly_goals/i.test(sql)) return { rows: [], rowCount: 0 };
+    if (/GROUP BY/i.test(sql)) return { rows: [], rowCount: 0 };
+    return { rows: [{ total: 0 }], rowCount: 1 };
+  });
+
+  it("routes a category_board directive to that board embed", async () => {
+    const ctx = convoCtx({
+      pool: { query: viewQuery() } as never,
+      converse: vi.fn(async () => ({ kind: "command", directive: { view: "category_board", category: "cardio", chartKind: null, window: null, statsTarget: null } })) as never,
+    });
+    const res = await handleMention("who's winning cardio", ctx);
+    expect(res.embed).toBeDefined();
+    expect(JSON.stringify(res.embed?.toJSON())).toMatch(/cardio/i);
+  });
+
+  it("routes a help directive to the help embed", async () => {
+    const ctx = convoCtx({
+      converse: vi.fn(async () => ({ kind: "command", directive: { view: "help", category: null, chartKind: null, window: null, statsTarget: null } })) as never,
+    });
+    const res = await handleMention("how do I use you", ctx);
+    expect(res.embed).toBeDefined();
+  });
+
+  it("routes a race chart directive (no history → friendly content, no image)", async () => {
+    const ctx = convoCtx({
+      pool: { query: vi.fn(async () => ({ rows: [], rowCount: 0 })) } as never,
+      converse: vi.fn(async () => ({ kind: "command", directive: { view: "chart", chartKind: "race", category: "pushups", window: null, statsTarget: null } })) as never,
+    });
+    const res = await handleMention("show me the race", ctx);
+    expect(res.content ?? "").toMatch(/no .* history|forge/i);
+    expect(res.files).toBeUndefined();
+  });
+
+  it("routes a stats directive for 'me' to the speaker's own stats", async () => {
+    const ctx = convoCtx({
+      pool: { query: viewQuery() } as never,
+      converse: vi.fn(async () => ({ kind: "command", directive: { view: "stats", category: null, chartKind: null, window: null, statsTarget: "me" } })) as never,
+    });
+    const res = await handleMention("how am I doing", ctx);
+    expect(res.embed).toBeDefined();
+    expect(JSON.stringify(res.embed?.toJSON())).toContain("Matt"); // the speaker's own name
+  });
+
+  it("routes a stats directive with a <@id> mention to that user (not self)", async () => {
+    const ctx = convoCtx({
+      pool: { query: viewQuery() } as never,
+      converse: vi.fn(async () => ({ kind: "command", directive: { view: "stats", category: null, chartKind: null, window: null, statsTarget: "<@99>" } })) as never,
+    });
+    const res = await handleMention("how is that guy doing", ctx);
+    expect(res.embed).toBeDefined(); // resolved to a non-self target without throwing
+  });
+
+  it("a category_board directive with no category falls back to the full scoreboard", async () => {
+    const ctx = convoCtx({
+      pool: { query: viewQuery() } as never,
+      converse: vi.fn(async () => ({ kind: "command", directive: { view: "category_board", category: null, chartKind: null, window: null, statsTarget: null } })) as never,
+    });
+    const res = await handleMention("show the board", ctx);
+    expect(res.embed).toBeDefined();
+    expect(JSON.stringify(res.embed?.toJSON())).toMatch(/scoreboard/i);
   });
 });
 

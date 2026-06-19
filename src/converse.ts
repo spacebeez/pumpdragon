@@ -2,6 +2,9 @@
 // The STATIC persona system prompt is sent as a cache_control:ephemeral block; all per-call context lives in
 // the user message so the cached prefix is byte-identical across calls.
 import type { AnthropicLike } from "./parser.js";
+import { findCategory, type Category } from "./categories.js";
+import type { ChartKind } from "./views.js";
+import type { TimeWindow } from "./timewindow.js";
 
 export interface ConversationMessage { author: string; text: string; isDragon: boolean; }
 
@@ -70,21 +73,79 @@ function buildUserContent(input: ConverseInput): string {
   return parts.join("\n\n");
 }
 
-export async function converse(input: ConverseInput, deps: ConverseDeps): Promise<string> {
+const SHOW_DATA_TOOL = {
+  name: "show_data",
+  description:
+    "Show the user a workout data view. Call this ONLY when the user is clearly asking to SEE standings, " +
+    "someone's stats, a chart/graph, monthly insights, or how to use the bot. Do NOT call it for casual chat, " +
+    "encouragement, or anything you're unsure about — in that case just reply in character and suggest the command.",
+  input_schema: {
+    type: "object",
+    properties: {
+      view: { type: "string", enum: ["scoreboard", "category_board", "stats", "chart", "insights", "help"] },
+      category: { type: "string", enum: ["pushups", "pullups", "cardio", "core", "lifting"], description: "for category_board and chart" },
+      chart_kind: { type: "string", enum: ["race", "mychart", "months"], description: "race = group cumulative; mychart = the speaker's own trend; months = who led each month" },
+      window: { type: "string", enum: ["thisMonth", "lastMonth", "allTime"], description: "for scoreboard" },
+      stats_target: { type: "string", description: "'me' for the speaker, or a <@id> mention for someone else" },
+    },
+    required: ["view"],
+  },
+} as const;
+
+const DIRECTIVE_VIEWS = ["scoreboard", "category_board", "stats", "chart", "insights", "help"] as const;
+type DirectiveView = (typeof DIRECTIVE_VIEWS)[number];
+const DIRECTIVE_CHART_KINDS: ChartKind[] = ["race", "mychart", "months"];
+
+export interface CommandDirective {
+  view: DirectiveView;
+  category: Category | null;
+  chartKind: ChartKind | null;
+  window: TimeWindow | null;
+  statsTarget: string | null;
+}
+
+export type ConverseResult =
+  | { kind: "chat"; text: string }
+  | { kind: "command"; directive: CommandDirective };
+
+/** Pure coercion of the untrusted tool input → a safe directive, or null if the view itself is invalid. */
+export function validateDirective(raw: unknown): CommandDirective | null {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const view = typeof o.view === "string" ? o.view : "";
+  if (!(DIRECTIVE_VIEWS as readonly string[]).includes(view)) return null;
+  const category = typeof o.category === "string" ? findCategory(o.category) : null;
+  const chartKind = typeof o.chart_kind === "string" && (DIRECTIVE_CHART_KINDS as readonly string[]).includes(o.chart_kind)
+    ? (o.chart_kind as ChartKind) : null;
+  let window: TimeWindow | null = null;
+  if (o.window === "thisMonth") window = { kind: "thisMonth" };
+  else if (o.window === "lastMonth") window = { kind: "lastMonth" };
+  else if (o.window === "allTime") window = { kind: "allTime" };
+  const statsTarget = typeof o.stats_target === "string" && o.stats_target.trim() ? o.stats_target.trim() : null;
+  return { view: view as DirectiveView, category, chartKind, window, statsTarget };
+}
+
+export async function converse(input: ConverseInput, deps: ConverseDeps): Promise<ConverseResult> {
   try {
     const res = await deps.client.messages.create(
       {
         model: deps.model,
-        max_tokens: 300,
+        max_tokens: 400,
         system: [{ type: "text", text: buildPersonaPrompt(input.roastNickname), cache_control: { type: "ephemeral" } }],
+        tools: [SHOW_DATA_TOOL],
         messages: [{ role: "user", content: buildUserContent(input) }],
       },
       { timeout: deps.timeoutMs },
     );
+    const toolUse = res.content.find((c) => c.type === "tool_use" && c.name === "show_data");
+    if (toolUse) {
+      const directive = validateDirective(toolUse.input);
+      if (directive) return { kind: "command", directive };
+      // malformed tool call → fall through to chat
+    }
     const text = res.content.find((c) => c.type === "text")?.text?.trim() ?? "";
-    if (!text) return pickFallback();
-    return text.length > MAX_REPLY_CHARS ? text.slice(0, MAX_REPLY_CHARS) : text;
+    if (!text) return { kind: "chat", text: pickFallback() };
+    return { kind: "chat", text: text.length > MAX_REPLY_CHARS ? text.slice(0, MAX_REPLY_CHARS) : text };
   } catch {
-    return pickFallback();
+    return { kind: "chat", text: pickFallback() };
   }
 }

@@ -78,7 +78,7 @@ export interface AnthropicLike {
     create: (
       body: unknown,
       options?: { timeout?: number },
-    ) => Promise<{ content: Array<{ type: string; text?: string }> }>;
+    ) => Promise<{ content: Array<{ type: string; text?: string; name?: string; input?: unknown }> }>;
   };
 }
 

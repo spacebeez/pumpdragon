@@ -10,9 +10,9 @@ import { lastCompletedMonth } from "./deltas.js";
 import { isHype, powerMeter } from "./scoring.js";
 import { parseAdminCommand, isAdmin, executeAdmin } from "./admin.js";
 import { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getCumulativeMonthlySeries, getGroupMonthlyByUser, getOverallStandings, getMonthEntryCount, getUserMonthCategoryCount, insertAchievement, getStandings, getUserPrevEntryTime, type CumulativeSeriesRow, type UserMonthQtyRow } from "./db/queries.js";
-import type { ConverseInput } from "./converse.js";
-import { categoryViewOf, boardCategoryOf, parseStatsRequest, isHelpRequest, parseChartRequest, isInsightsRequest } from "./views.js";
-import { parseTimeWindow } from "./timewindow.js";
+import type { ConverseInput, ConverseResult, CommandDirective } from "./converse.js";
+import { categoryViewOf, boardCategoryOf, parseStatsRequest, isHelpRequest, parseChartRequest, isInsightsRequest, type StatsRequest, type ChartKind } from "./views.js";
+import { parseTimeWindow, type TimeWindow } from "./timewindow.js";
 import { buildRaceReply, buildTrendReply, buildMonthsReply } from "./chart/build.js";
 import { buildInsightsEmbed } from "./insights.js";
 import { evaluateAchievements, type AchievementContext } from "./achievements.js";
@@ -37,7 +37,7 @@ export interface MentionCtx {
   authorName: string;
   messageId: string | null;
   now?: () => Date;
-  converse?: (input: ConverseInput) => Promise<string>;
+  converse?: (input: ConverseInput) => Promise<ConverseResult>;
   fetchRecentMessages?: () => Promise<import("./converse.js").ConversationMessage[]>;
   rng?: () => number;
 }
@@ -136,6 +136,40 @@ async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[
   }
 }
 
+function scoreboardLabelFor(w: TimeWindow): string {
+  if (w.kind === "lastMonth") return "🐉 scoreboard — last month";
+  if (w.kind === "allTime") return "🐉 scoreboard — all time";
+  return "🐉 scoreboard";
+}
+
+function resolveStatsTarget(raw: string | null): StatsRequest {
+  if (!raw) return { self: true };
+  const m = raw.match(/<@!?(\d+)>/);
+  return m ? { self: false, userId: m[1]! } : { self: true };
+}
+
+/** Map a validated NL directive onto the shared view helpers (safe defaults, never a dead-end). */
+async function runDirective(ctx: MentionCtx, d: CommandDirective, now: Date): Promise<Reply> {
+  switch (d.view) {
+    case "scoreboard": {
+      const window = d.window ?? { kind: "thisMonth" as const };
+      return await showScoreboard(ctx, window, scoreboardLabelFor(window));
+    }
+    case "category_board":
+      return d.category
+        ? await showCategoryBoard(ctx, d.category)
+        : await showScoreboard(ctx, { kind: "thisMonth" }, scoreboardLabelFor({ kind: "thisMonth" }));
+    case "stats":
+      return await showStats(ctx, resolveStatsTarget(d.statsTarget));
+    case "chart":
+      return await showChart(ctx, d.chartKind ?? "race", d.category ?? "pushups", now);
+    case "insights":
+      return await showInsights(ctx, now);
+    case "help":
+      return showHelp(ctx);
+  }
+}
+
 async function converseReply(ctx: MentionCtx, text: string): Promise<Reply> {
   if (!ctx.converse) {
     return { content: `🐉 didn't catch that — try e.g. "50 pushups and 20 min cardio".` };
@@ -149,7 +183,7 @@ async function converseReply(ctx: MentionCtx, text: string): Promise<Reply> {
   const leader = overall[0] ?? null;
   const leaderName = leader ? (await resolveNames(ctx.member, [leader.userId])).get(leader.userId) ?? null : null;
   const transcript = ctx.fetchRecentMessages ? await ctx.fetchRecentMessages() : [];
-  const reply = await ctx.converse({
+  const result = await ctx.converse({
     message: text,
     speakerName: ctx.authorName,
     isRoastTarget,
@@ -160,7 +194,47 @@ async function converseReply(ctx: MentionCtx, text: string): Promise<Reply> {
     leaderTotal: leader?.total ?? 0,
     transcript,
   });
-  return { content: reply };
+  if (result.kind === "command") {
+    return await runDirective(ctx, result.directive, (ctx.now ?? (() => new Date()))());
+  }
+  return { content: result.text };
+}
+
+async function showScoreboard(ctx: MentionCtx, window: TimeWindow, label: string): Promise<Reply> {
+  return { embed: await buildScoreboardEmbed(ctx.pool, ctx.config, ctx.renderer, label, window) };
+}
+
+async function showCategoryBoard(ctx: MentionCtx, cat: Category): Promise<Reply> {
+  return { embed: await buildCategoryBoardEmbed(ctx.pool, ctx.config, ctx.renderer, cat, `🐉 ${cat} — this month`) };
+}
+
+async function showStats(ctx: MentionCtx, target: StatsRequest): Promise<Reply> {
+  const userId = target.self ? ctx.authorId : target.userId;
+  const name = target.self
+    ? ctx.authorName
+    : await ctx.member.guild.members.fetch(userId).then((m) => m.displayName).catch(() => "that warrior");
+  return { embed: await buildStatsCardEmbed(ctx.pool, ctx.config, ctx.renderer, userId, name) };
+}
+
+async function showChart(ctx: MentionCtx, kind: ChartKind, category: Category, now: Date): Promise<Reply> {
+  if (kind === "mychart") {
+    return await buildTrendReply(ctx.pool, ctx.config, category, ctx.authorId, ctx.authorName, now);
+  }
+  const rows = kind === "race"
+    ? await getCumulativeMonthlySeries(ctx.pool, ctx.config.guildId, ctx.config.timezone, category)
+    : await getGroupMonthlyByUser(ctx.pool, ctx.config.guildId, ctx.config.timezone, category);
+  const names = await resolveNames(ctx.member, [...new Set(rows.map((r) => r.userId))]);
+  return kind === "race"
+    ? await buildRaceReply(ctx.pool, ctx.config, category, names, now, rows as CumulativeSeriesRow[])
+    : await buildMonthsReply(ctx.pool, ctx.config, category, names, now, rows as UserMonthQtyRow[]);
+}
+
+async function showInsights(ctx: MentionCtx, now: Date): Promise<Reply> {
+  return { embed: await buildInsightsEmbed(ctx.pool, ctx.config, now) };
+}
+
+function showHelp(ctx: MentionCtx): Reply {
+  return { embed: ctx.renderer.help({ isAdmin: isAdmin(ctx.member, ctx.config.adminRoleIds) }) };
 }
 
 export async function handleMention(rest: string, ctx: MentionCtx): Promise<Reply> {
@@ -194,48 +268,33 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
   }
 
   if (isHelpRequest(text)) {
-    return { embed: ctx.renderer.help({ isAdmin: isAdmin(ctx.member, ctx.config.adminRoleIds) }) };
+    return showHelp(ctx);
   }
 
   const cat = categoryViewOf(text);
   if (cat) {
-    return { embed: await buildCategoryBoardEmbed(ctx.pool, ctx.config, ctx.renderer, cat, `🐉 ${cat} — this month`) };
+    return await showCategoryBoard(ctx, cat);
   }
 
   const stats = parseStatsRequest(text);
   if (stats) {
     // NOTE: stats always shows the current month; windowed stats (e.g. "stats @user last month") not yet supported.
-    const userId = stats.self ? ctx.authorId : stats.userId;
-    const name = stats.self
-      ? ctx.authorName
-      : await ctx.member.guild.members.fetch(userId).then((m) => m.displayName).catch(() => "that warrior");
-    return { embed: await buildStatsCardEmbed(ctx.pool, ctx.config, ctx.renderer, userId, name) };
+    return await showStats(ctx, stats);
   }
 
   if (isInsightsRequest(text)) {
-    return { embed: await buildInsightsEmbed(ctx.pool, ctx.config, (ctx.now ?? (() => new Date()))()) };
+    return await showInsights(ctx, (ctx.now ?? (() => new Date()))());
   }
 
   const chart = parseChartRequest(text);
   if (chart) {
-    const now = (ctx.now ?? (() => new Date()))();
-    if (chart.kind === "mychart") {
-      return await buildTrendReply(ctx.pool, ctx.config, chart.category, ctx.authorId, ctx.authorName, now);
-    }
-    // race + months need display-name labels for the people they plot
-    const rows = chart.kind === "race"
-      ? await getCumulativeMonthlySeries(ctx.pool, ctx.config.guildId, ctx.config.timezone, chart.category)
-      : await getGroupMonthlyByUser(ctx.pool, ctx.config.guildId, ctx.config.timezone, chart.category);
-    const names = await resolveNames(ctx.member, [...new Set(rows.map((r) => r.userId))]);
-    return chart.kind === "race"
-      ? await buildRaceReply(ctx.pool, ctx.config, chart.category, names, now, rows as CumulativeSeriesRow[])
-      : await buildMonthsReply(ctx.pool, ctx.config, chart.category, names, now, rows as UserMonthQtyRow[]);
+    return await showChart(ctx, chart.kind, chart.category, (ctx.now ?? (() => new Date()))());
   }
 
   // "board pushups" / "scoreboard cardio" → that single category's board (must precede the generic board match)
   const boardCat = boardCategoryOf(text);
   if (boardCat) {
-    return { embed: await buildCategoryBoardEmbed(ctx.pool, ctx.config, ctx.renderer, boardCat, `🐉 ${boardCat} — this month`) };
+    return await showCategoryBoard(ctx, boardCat);
   }
 
   const now = (ctx.now ?? (() => new Date()))();
@@ -246,7 +305,7 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     // strip any leading board-word so the title reads "scoreboard — last month", not "— board last month"
     const windowLabel = text.trim().replace(/^(board|scoreboard|standings|leaderboard)\s+/i, "");
     const label = window.kind === "thisMonth" ? "🐉 scoreboard" : `🐉 scoreboard — ${windowLabel}`;
-    return { embed: await buildScoreboardEmbed(ctx.pool, ctx.config, ctx.renderer, label, window) };
+    return await showScoreboard(ctx, window, label);
   }
 
   const parsed = await ctx.parse(text);
