@@ -15,7 +15,8 @@ import { categoryViewOf, boardCategoryOf, parseStatsRequest, isHelpRequest, pars
 import { parseTimeWindow, type TimeWindow } from "./timewindow.js";
 import { buildRaceReply, buildTrendReply, buildMonthsReply } from "./chart/build.js";
 import { buildInsightsEmbed } from "./insights.js";
-import { evaluateAchievements, type AchievementContext } from "./achievements.js";
+import { evaluateAchievements, type AchievementContext, type Award } from "./achievements.js";
+import { photoMoodForAwards, renderPhoto, createCooldownGate, type PhotoMood, type PhotoFile } from "./photos.js";
 
 export interface MentionCtx {
   renderer: Renderer;
@@ -40,6 +41,8 @@ export interface MentionCtx {
   converse?: (input: ConverseInput) => Promise<ConverseResult>;
   fetchRecentMessages?: () => Promise<import("./converse.js").ConversationMessage[]>;
   rng?: () => number;
+  renderPhoto?: (mood: PhotoMood, rng: () => number) => Promise<PhotoFile | null>;
+  magicPhotoGate?: { allow(now: Date, rng: () => number): boolean };
 }
 
 export type { Reply } from "./renderer/types.js";
@@ -71,10 +74,12 @@ export async function resolveNames(member: GuildMember, ids: string[]): Promise<
 
 type DbBag = NonNullable<MentionCtx["db"]>;
 
+const defaultMagicGate = createCooldownGate({ chance: 0.2, cooldownMs: 15 * 60_000 });
+
 /** Build the achievement context from this log, evaluate, write newly-earned rows, return flare lines.
  *  Wrapped so a detection failure NEVER breaks the log reply. `groupMonthAfter` is the post-log group total.
  *  `prevEntryTime` is the user's most recent entry timestamp captured BEFORE this log's insert. */
-async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[], groupMonthAfter: number, prevEntryTime: Date | null): Promise<string[]> {
+async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[], groupMonthAfter: number, prevEntryTime: Date | null): Promise<{ flares: string[]; photoMood: PhotoMood | null }> {
   try {
     const now = (ctx.now ?? (() => new Date()))();
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: ctx.config.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
@@ -120,19 +125,20 @@ async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[
       priorCategoryLeader,
     };
     const flares: string[] = [];
+    const earned: Award[] = [];
     for (const a of evaluateAchievements(context)) {
-      const earned = await db.insertAchievement(ctx.pool, {
+      const created = await db.insertAchievement(ctx.pool, {
         guildId: ctx.config.guildId,
         userId: a.scope === "group" ? null : ctx.authorId,
         key: a.key,
         periodKey: a.periodKey ?? periodKey,
       });
-      if (earned) flares.push(a.flare);
+      if (created) { flares.push(a.flare); earned.push(a); }
     }
-    return flares;
+    return { flares, photoMood: photoMoodForAwards(earned, ctx.rng ?? Math.random) };
   } catch (e) {
     console.error("[pumpdragon] achievement detection error:", e);
-    return [];
+    return { flares: [], photoMood: null };
   }
 }
 
@@ -197,7 +203,12 @@ async function converseReply(ctx: MentionCtx, text: string): Promise<Reply> {
   if (result.kind === "command") {
     return await runDirective(ctx, result.directive, (ctx.now ?? (() => new Date()))());
   }
-  return { content: result.text };
+  const reply: Reply = { content: result.text };
+  if ((isRoastTarget || includeJab) && (ctx.magicPhotoGate ?? defaultMagicGate).allow((ctx.now ?? (() => new Date()))(), rng)) {
+    const photo = await (ctx.renderPhoto ?? renderPhoto)("smug", rng);
+    if (photo) reply.files = [photo];
+  }
+  return reply;
 }
 
 async function showScoreboard(ctx: MentionCtx, window: TimeWindow, label: string): Promise<Reply> {
@@ -329,7 +340,7 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     db.getCurrentGoal(ctx.pool, ctx.config.guildId, ctx.config.timezone),
   ]);
   const pm = powerMeter(total, goal);
-  const achievements = await awardAchievements(ctx, db, rows, total, prevEntryTime);
+  const { flares, photoMood } = await awardAchievements(ctx, db, rows, total, prevEntryTime);
 
   const embed = ctx.renderer.logReply({
     loggedBy: ctx.authorName,
@@ -337,7 +348,8 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     unparsed: parsed.unparsed,
     hypeLine: hypeRow ? randomHypePhrase(Math.random, hypeRow.detail) : null,
     powerMeterText: pm.text,
-    achievements,
+    achievements: flares,
   });
-  return { embed };
+  const photo = photoMood ? await (ctx.renderPhoto ?? renderPhoto)(photoMood, ctx.rng ?? Math.random) : null;
+  return photo ? { embed, files: [photo] } : { embed };
 }

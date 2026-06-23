@@ -214,6 +214,76 @@ describe("conversation routing", () => {
   });
 });
 
+describe("photo posting", () => {
+  function photoDb(over: Record<string, unknown> = {}) {
+    return {
+      insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 200, userMonthlyTotal: 200, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]),
+      getCurrentMonthCombinedTotal: vi.fn(async () => 9100), // crosses 9000 → over_9000
+      getCurrentGoal: vi.fn(async () => null),
+      getMonthEntryCount: vi.fn(async () => 5),
+      getUserMonthCategoryCount: vi.fn(async () => 1),
+      insertAchievement: vi.fn(async () => true),
+      getStandings: vi.fn(async () => []),
+      getUserPrevEntryTime: vi.fn(async () => null),
+      ...over,
+    } as never;
+  }
+
+  it("attaches a flex photo when a big achievement (over 9,000) fires", async () => {
+    const fakePhoto = { name: "dragon-flex.png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
+    const renderPhoto = vi.fn(async () => fakePhoto);
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 200, detail: null }], unparsed: [] })) as never,
+      db: photoDb(),
+      rng: () => 0.99,
+      renderPhoto,
+    } as never);
+    const res = await handleMention("200 pushups", ctx);
+    expect(renderPhoto).toHaveBeenCalledWith("flex", expect.any(Function));
+    expect(res.files).toEqual([fakePhoto]);
+  });
+
+  it("attaches no photo on a normal log (no achievement)", async () => {
+    const renderPhoto = vi.fn(async () => ({ name: "x.png", buffer: Buffer.from([1]) }));
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 50, detail: null }], unparsed: [] })) as never,
+      db: photoDb({ insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 50, userMonthlyTotal: 50, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 50), insertAchievement: vi.fn(async () => false) }),
+      rng: () => 0.99,
+      renderPhoto,
+    } as never);
+    const res = await handleMention("50 pushups", ctx);
+    expect(renderPhoto).not.toHaveBeenCalled();
+    expect(res.files).toBeUndefined();
+  });
+
+  it("attaches the smug photo on a magic roast when the gate allows", async () => {
+    const fakePhoto = { name: "dragon-smug.png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
+    const renderPhoto = vi.fn(async () => fakePhoto);
+    const ctx = convoCtx({ authorId: "MAGIC", renderPhoto, magicPhotoGate: { allow: () => true } } as never);
+    const res = await handleMention("hey dragon", ctx);
+    expect(renderPhoto).toHaveBeenCalledWith("smug", expect.any(Function));
+    expect(res.files).toEqual([fakePhoto]);
+    expect(res.content).toBe("🐉 hype reply");
+  });
+
+  it("attaches no photo when the magic gate denies", async () => {
+    const renderPhoto = vi.fn(async () => ({ name: "x.png", buffer: Buffer.from([1]) }));
+    const ctx = convoCtx({ authorId: "MAGIC", renderPhoto, magicPhotoGate: { allow: () => false } } as never);
+    const res = await handleMention("hey", ctx);
+    expect(renderPhoto).not.toHaveBeenCalled();
+    expect(res.files).toBeUndefined();
+  });
+
+  it("attaches no photo on a non-roast chat turn even if the gate would allow", async () => {
+    const renderPhoto = vi.fn(async () => ({ name: "x.png", buffer: Buffer.from([1]) }));
+    const ctx = convoCtx({ authorId: "not-magic", rng: () => 0.99, renderPhoto, magicPhotoGate: { allow: () => true } } as never);
+    await handleMention("hey", ctx);
+    expect(renderPhoto).not.toHaveBeenCalled();
+  });
+});
+
 describe("natural-language command routing", () => {
   const viewQuery = () => vi.fn(async (sql: string) => {
     if (/monthly_goals/i.test(sql)) return { rows: [], rowCount: 0 };

@@ -21,3 +21,8 @@ scripts/scoreboarder-config.json
 
 # Local chart eyeball artifacts (rendered PNGs show real member display names). Keep local.
 .smoke/
+
+# Dragon photo assets — large binaries (~8MB each); bundled into the container at deploy, not via git. Keep photos/README.md tracked.
+photos/*.png
+photos/*.jpg
+photos/*.jpeg
