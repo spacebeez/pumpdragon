@@ -17,9 +17,28 @@ const MOOD_FILE: Record<PhotoMood, string> = {
 
 /** Curated mood-matched captions (double-entendre gym/bro energy; suggestive, not explicit). Edit freely. */
 const PHRASE_POOLS: Record<PhotoMood, string[]> = {
-  roar: ["CRUSHER", "RAW POWER", "DESTROYER", "PACKING HEAT", "FERAL", "MAX EFFORT"],
-  smug: ["DRAGON PUMP", "FULL SEND", "ALL GAS", "BIG IRON ENERGY", "PROVE IT", "NICE FORM"],
-  flex: ["ASCENDED", "CERTIFIED UNIT", "PEAK FORM", "BUILT DIFFERENT", "LEGEND", "SWOLE"],
+  // roar = the logger's savage win (regicide / monster lift): triumphant eruption energy
+  roar: [
+    "CRUSHER", "RAW POWER", "DESTROYER", "PACKING HEAT", "FERAL", "MAX EFFORT",
+    "Dragon's fully roused", "Erupted on the final rep", "Pumped 'til I popped",
+    "Emptied the chamber clean", "Gripped it, ripped it, dripped it", "Throbbing, dripping, and done",
+    "Throbbed through the cooldown", "Let the beast loose and didn't hold back",
+    "Geysered fire 'til the embers died", "Coiled tight, then sprang and spent it all",
+    "Blew the cave wide open", "Drenched, drained, delighted",
+  ],
+  // smug = magic-burn / cocky: mock the weakness
+  smug: [
+    "DRAGON PUMP", "FULL SEND", "ALL GAS", "BIG IRON ENERGY", "PROVE IT", "NICE FORM",
+    "Wet noodle wingspan", "All hiss, no thrust", "Soft-scaled", "Big roar, little tail",
+    "Damp matchstick energy", "Folded like wet wings", "Blew your load early", "Long flight, hard landing",
+    "Couldn't breathe fire if you ate a candle",
+  ],
+  // flex = celebration / milestone: triumphant build-and-finish
+  flex: [
+    "ASCENDED", "CERTIFIED UNIT", "PEAK FORM", "BUILT DIFFERENT", "LEGEND", "SWOLE",
+    "Built it up slow, let it rip fast", "Quivering on the last one, but I delivered",
+    "Mounted the summit and let it all go", "Dripping smoke, draped in glory",
+  ],
 };
 
 const RENDER_WIDTH = 1024;
@@ -105,7 +124,7 @@ export async function renderPhoto(mood: PhotoMood, rng: () => number): Promise<P
     const ctx = canvas.getContext("2d");
     ctx.drawImage(base, 0, 0, w, h);
 
-    const text = pickPhrase(mood, rng);
+    const text = pickPhrase(mood, rng).toUpperCase();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.lineJoin = "round";
