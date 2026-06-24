@@ -75,6 +75,20 @@ describe("renderPhoto", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("picks among multiple files for a mood by rng", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pd-photos-multi-"));
+    writeFileSync(join(dir, "dragon-roar.png"), createCanvas(40, 60).toBuffer("image/png"));
+    writeFileSync(join(dir, "dragon-roar-2.png"), createCanvas(40, 60).toBuffer("image/png"));
+    process.env.PHOTOS_DIR = dir;
+    const { renderPhoto } = await import("../src/photos.js");
+    const a = await renderPhoto("roar", () => 0);    // index 0
+    const b = await renderPhoto("roar", () => 0.99); // index 1
+    expect(a!.name).toMatch(/^dragon-roar.*\.png$/);
+    expect(b!.name).toMatch(/^dragon-roar.*\.png$/);
+    expect(a!.name).not.toBe(b!.name); // different rng → different file in a 2-file pool
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("returns null when the base file is missing (never throws)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pd-photos-empty-"));
     process.env.PHOTOS_DIR = dir;

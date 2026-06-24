@@ -1,6 +1,6 @@
 // Dragon photo posting: mood selection, caption render (canvas), and the magic-burn cooldown gate.
 // Everything is null-safe — a missing file / render error returns null so the text still posts.
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { createCanvas, loadImage, GlobalFonts, type Image } from "@napi-rs/canvas";
 import { MILESTONE_TIERS, type Award } from "./achievements.js";
@@ -9,11 +9,8 @@ import type { Category } from "./categories.js";
 export type PhotoMood = "roar" | "smug" | "flex";
 export interface PhotoFile { name: string; buffer: Buffer; }
 
-const MOOD_FILE: Record<PhotoMood, string> = {
-  roar: "dragon-roar.png",
-  smug: "dragon-smug.png",
-  flex: "dragon-flex.png",
-};
+// Each mood maps to ANY file named `dragon-<mood>*.png` in the photos dir (e.g. dragon-roar.png,
+// dragon-roar-2.png …). Drop a correctly-named PNG in the folder and it's auto-included — no code change.
 
 /** Curated mood-matched captions (double-entendre gym/bro energy; suggestive, not explicit). Edit freely. */
 const PHRASE_POOLS: Record<PhotoMood, string[]> = {
@@ -97,18 +94,34 @@ export function createCooldownGate({ chance, cooldownMs }: { chance: number; coo
   };
 }
 
-// Cache the decoded base image per mood; a null entry means "known missing" (don't re-stat).
-const baseCache = new Map<PhotoMood, Image | null>();
+function photosDir(): string {
+  return process.env.PHOTOS_DIR ?? path.join(process.cwd(), "photos");
+}
 
-async function loadBase(mood: PhotoMood): Promise<Image | null> {
-  if (baseCache.has(mood)) return baseCache.get(mood)!;
-  const dir = process.env.PHOTOS_DIR ?? path.join(process.cwd(), "photos");
+// List of `dragon-<mood>*.png` filenames per mood (cached after the first readdir).
+const fileListCache = new Map<PhotoMood, string[]>();
+function filesForMood(mood: PhotoMood): string[] {
+  const cached = fileListCache.get(mood);
+  if (cached) return cached;
+  let files: string[] = [];
   try {
-    const img = await loadImage(path.join(dir, MOOD_FILE[mood]));
-    baseCache.set(mood, img);
+    files = readdirSync(photosDir()).filter((f) => f.startsWith(`dragon-${mood}`) && f.toLowerCase().endsWith(".png"));
+  } catch { files = []; }
+  fileListCache.set(mood, files);
+  return files;
+}
+
+// Decoded base image per filename; a null entry means "known missing" (don't re-stat).
+const baseCache = new Map<string, Image | null>();
+
+async function loadBaseFile(file: string): Promise<Image | null> {
+  if (baseCache.has(file)) return baseCache.get(file)!;
+  try {
+    const img = await loadImage(path.join(photosDir(), file));
+    baseCache.set(file, img);
     return img;
   } catch {
-    baseCache.set(mood, null);
+    baseCache.set(file, null);
     return null;
   }
 }
@@ -116,7 +129,10 @@ async function loadBase(mood: PhotoMood): Promise<Image | null> {
 /** Load the base image, overlay a random mood caption, return the composite PNG. Null on any miss/error. */
 export async function renderPhoto(mood: PhotoMood, rng: () => number): Promise<PhotoFile | null> {
   try {
-    const base = await loadBase(mood);
+    const files = filesForMood(mood);
+    if (files.length === 0) return null;
+    const file = files[Math.min(files.length - 1, Math.max(0, Math.floor(rng() * files.length)))]!;
+    const base = await loadBaseFile(file);
     if (!base) return null;
     const w = RENDER_WIDTH;
     const h = Math.round((base.height / base.width) * w);
@@ -142,7 +158,7 @@ export async function renderPhoto(mood: PhotoMood, rng: () => number): Promise<P
     ctx.fillStyle = "#ffffff";
     ctx.fillText(text, w / 2, y);
 
-    return { name: MOOD_FILE[mood], buffer: canvas.toBuffer("image/png") };
+    return { name: file, buffer: canvas.toBuffer("image/png") };
   } catch (e) {
     console.error("[pumpdragon] photo render error:", e);
     return null;
