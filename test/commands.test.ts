@@ -258,6 +258,35 @@ describe("photo posting", () => {
     expect(res.files).toBeUndefined();
   });
 
+  it("drops a zen photo on a core/cardio log when the rare roll hits", async () => {
+    const fakePhoto = { name: "dragon-zen-1.png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
+    const renderPhoto = vi.fn(async () => fakePhoto);
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "cardio", quantity: 30, detail: null }], unparsed: [] })) as never,
+      db: photoDb({ insertEntries: vi.fn(async () => [{ category: "cardio", quantity: 30, userMonthlyTotal: 30, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 30), insertAchievement: vi.fn(async () => false) }),
+      rng: () => 0.01, // below ZEN_PHOTO_CHANCE → zen fires
+      renderPhoto,
+    } as never);
+    const res = await handleMention("30 min cardio", ctx);
+    expect(renderPhoto).toHaveBeenCalledWith("zen", expect.any(Function));
+    expect(res.files).toEqual([fakePhoto]);
+  });
+
+  it("no zen photo on a non-core/cardio log even when the roll would hit", async () => {
+    const renderPhoto = vi.fn(async () => ({ name: "x.png", buffer: Buffer.from([1]) }));
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 30, detail: null }], unparsed: [] })) as never,
+      db: photoDb({ insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 30, userMonthlyTotal: 30, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 30), insertAchievement: vi.fn(async () => false) }),
+      rng: () => 0.01,
+      renderPhoto,
+    } as never);
+    const res = await handleMention("30 pushups", ctx);
+    expect(renderPhoto).not.toHaveBeenCalled();
+    expect(res.files).toBeUndefined();
+  });
+
   it("attaches the smug photo on a magic roast when the gate allows", async () => {
     const fakePhoto = { name: "dragon-smug.png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
     const renderPhoto = vi.fn(async () => fakePhoto);
@@ -410,6 +439,7 @@ describe("handleMention new view routing", () => {
         getUserPrevEntryTime: vi.fn(async () => null),
       } as never,
       parse: vi.fn(async () => ({ items: [{ category: "cardio", quantity: 100, detail: "trail running" }], unparsed: [] })) as never,
+      rng: () => 0.99, // keep the rare zen-photo drop off this deterministic embed test
     });
     const res = await handleMention("ran 100 min trail running", ctx);
     expect(JSON.stringify(res.embed?.toJSON())).toContain("trail running");

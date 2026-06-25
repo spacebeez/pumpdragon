@@ -6,7 +6,7 @@ import { createCanvas, loadImage, GlobalFonts, type Image } from "@napi-rs/canva
 import { MILESTONE_TIERS, type Award } from "./achievements.js";
 import type { Category } from "./categories.js";
 
-export type PhotoMood = "roar" | "smug" | "flex";
+export type PhotoMood = "roar" | "smug" | "flex" | "zen";
 export interface PhotoFile { name: string; buffer: Buffer; }
 
 // Each mood maps to ANY file named `dragon-<mood>*.png` in the photos dir (e.g. dragon-roar.png,
@@ -36,10 +36,17 @@ const PHRASE_POOLS: Record<PhotoMood, string[]> = {
     "Built it up slow, let it rip fast", "Quivering on the last one, but I delivered",
     "Mounted the summit and let it all go", "Dripping smoke, draped in glory",
   ],
+  // zen = recovery / mobility easter egg (rare drop on core/cardio logs): centered but still a beast
+  zen: [
+    "NAMASTE, BEAST", "RECOVERY IS A WEAPON", "STRETCH OR SNAP", "SWOLE AND CENTERED",
+    "GAINS IN STILLNESS", "BREATHE, THEN DESTROY", "LIMBER LEGEND", "MOBILITY MOGUL", "BENDY BEAST",
+  ],
 };
 
 const RENDER_WIDTH = 1024;
 export const SMALL_ACHIEVEMENT_PHOTO_CHANCE = 0.12;
+/** ~10% chance a core/cardio log (no achievement) drops a zen recovery dragon. */
+export const ZEN_PHOTO_CHANCE = 0.1;
 const CAPTION_FONT = "PhotoCaption";
 
 // Register a bold font for captions if available (Alpine image installs font-dejavu; dev fallbacks below).

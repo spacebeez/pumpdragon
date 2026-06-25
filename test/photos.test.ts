@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import {
-  pickPhrase, photoMoodForAwards, createCooldownGate, SMALL_ACHIEVEMENT_PHOTO_CHANCE,
+  pickPhrase, photoMoodForAwards, createCooldownGate, SMALL_ACHIEVEMENT_PHOTO_CHANCE, ZEN_PHOTO_CHANCE,
 } from "../src/photos.js";
 import type { Award } from "../src/achievements.js";
 
@@ -13,6 +13,7 @@ const award = (key: string): Award => ({ key, scope: "user", flare: key });
 describe("pickPhrase", () => {
   it("returns a member of the mood pool, deterministic for fixed rng", () => {
     expect(typeof pickPhrase("roar", () => 0)).toBe("string");
+    expect(typeof pickPhrase("zen", () => 0)).toBe("string");
     expect(pickPhrase("flex", () => 0)).toBe(pickPhrase("flex", () => 0));
   });
 });
@@ -55,8 +56,9 @@ describe("createCooldownGate", () => {
     expect(gate.allow(new Date(0), () => 0.9)).toBe(false); // chance miss
     expect(gate.allow(new Date(10), () => 0.0)).toBe(true); // not blocked by a prior (missed) attempt
   });
-  it("SMALL_ACHIEVEMENT_PHOTO_CHANCE is the documented value", () => {
+  it("the documented chance constants", () => {
     expect(SMALL_ACHIEVEMENT_PHOTO_CHANCE).toBe(0.12);
+    expect(ZEN_PHOTO_CHANCE).toBe(0.1);
   });
 });
 

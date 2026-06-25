@@ -16,7 +16,7 @@ import { parseTimeWindow, type TimeWindow } from "./timewindow.js";
 import { buildRaceReply, buildTrendReply, buildMonthsReply } from "./chart/build.js";
 import { buildInsightsEmbed } from "./insights.js";
 import { evaluateAchievements, type AchievementContext, type Award } from "./achievements.js";
-import { photoMoodForAwards, renderPhoto, createCooldownGate, type PhotoMood, type PhotoFile } from "./photos.js";
+import { photoMoodForAwards, renderPhoto, createCooldownGate, ZEN_PHOTO_CHANCE, type PhotoMood, type PhotoFile } from "./photos.js";
 
 export interface MentionCtx {
   renderer: Renderer;
@@ -350,6 +350,11 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     powerMeterText: pm.text,
     achievements: flares,
   });
-  const photo = photoMood ? await (ctx.renderPhoto ?? renderPhoto)(photoMood, ctx.rng ?? Math.random) : null;
+  // Achievement pic takes priority; otherwise a rare zen drop on a core/cardio (recovery-ish) log.
+  let mood: PhotoMood | null = photoMood;
+  if (!mood && rows.some((r) => r.category === "core" || r.category === "cardio") && (ctx.rng ?? Math.random)() < ZEN_PHOTO_CHANCE) {
+    mood = "zen";
+  }
+  const photo = mood ? await (ctx.renderPhoto ?? renderPhoto)(mood, ctx.rng ?? Math.random) : null;
   return photo ? { embed, files: [photo] } : { embed };
 }
