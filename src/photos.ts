@@ -6,7 +6,7 @@ import { createCanvas, loadImage, GlobalFonts, type Image } from "@napi-rs/canva
 import { MILESTONE_TIERS, type Award } from "./achievements.js";
 import type { Category } from "./categories.js";
 
-export type PhotoMood = "roar" | "smug" | "flex" | "zen";
+export type PhotoMood = "roar" | "smug" | "flex" | "zen" | "weak";
 export interface PhotoFile { name: string; buffer: Buffer; }
 
 // Each mood maps to ANY file named `dragon-<mood>*.png` in the photos dir (e.g. dragon-roar.png,
@@ -41,12 +41,25 @@ const PHRASE_POOLS: Record<PhotoMood, string[]> = {
     "NAMASTE, BEAST", "RECOVERY IS A WEAPON", "STRETCH OR SNAP", "SWOLE AND CENTERED",
     "GAINS IN STILLNESS", "BREATHE, THEN DESTROY", "LIMBER LEGEND", "MOBILITY MOGUL", "BENDY BEAST",
   ],
+  // weak = magic burns + tiny submissions: mock the weakling
+  weak: [
+    "WEAK WYRM", "SCRAWNY SMAUG", "LOSER LIZARD", "ALL SCALES, NO MUSCLE", "COUCH DRAGON",
+    "PARTICIPATION SCALES", "FEATHERWEIGHT FLAME", "BABY GECKO ENERGY", "DAMP NOODLE",
+  ],
 };
 
 const RENDER_WIDTH = 1024;
 export const SMALL_ACHIEVEMENT_PHOTO_CHANCE = 0.12;
 /** ~10% chance a core/cardio log (no achievement) drops a zen recovery dragon. */
 export const ZEN_PHOTO_CHANCE = 0.1;
+
+/** A "tiny submission" worth a weak-dragon clown: under 10 of a category where single digits = genuinely weak.
+ *  Pullups & lifting are exempt — low reps there are legit/hard, not weak. */
+const TINY_SUBMISSION_QTY = 10;
+const TINY_MOCK_CATEGORIES: Category[] = ["pushups", "cardio", "core"];
+export function isTinySubmission(category: Category, quantity: number): boolean {
+  return TINY_MOCK_CATEGORIES.includes(category) && quantity < TINY_SUBMISSION_QTY;
+}
 const CAPTION_FONT = "PhotoCaption";
 
 // Register a bold font for captions if available (Alpine image installs font-dejavu; dev fallbacks below).

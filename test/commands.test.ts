@@ -287,14 +287,43 @@ describe("photo posting", () => {
     expect(res.files).toBeUndefined();
   });
 
-  it("attaches the smug photo on a magic roast when the gate allows", async () => {
-    const fakePhoto = { name: "dragon-smug.png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
+  it("attaches a weak photo on a magic roast when the gate allows", async () => {
+    const fakePhoto = { name: "dragon-weak-1.png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
     const renderPhoto = vi.fn(async () => fakePhoto);
     const ctx = convoCtx({ authorId: "MAGIC", renderPhoto, magicPhotoGate: { allow: () => true } } as never);
     const res = await handleMention("hey dragon", ctx);
-    expect(renderPhoto).toHaveBeenCalledWith("smug", expect.any(Function));
+    expect(renderPhoto).toHaveBeenCalledWith("weak", expect.any(Function));
     expect(res.files).toEqual([fakePhoto]);
     expect(res.content).toBe("🐉 hype reply");
+  });
+
+  it("drops a weak photo on a tiny pushups submission (<10)", async () => {
+    const fakePhoto = { name: "dragon-weak-1.png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
+    const renderPhoto = vi.fn(async () => fakePhoto);
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 5, detail: null }], unparsed: [] })) as never,
+      db: photoDb({ insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 5, userMonthlyTotal: 5, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 5), insertAchievement: vi.fn(async () => false) }),
+      rng: () => 0.99,
+      renderPhoto,
+    } as never);
+    const res = await handleMention("5 pushups", ctx);
+    expect(renderPhoto).toHaveBeenCalledWith("weak", expect.any(Function));
+    expect(res.files).toEqual([fakePhoto]);
+  });
+
+  it("does NOT mock a tiny pullups submission (<10 pullups is legit)", async () => {
+    const renderPhoto = vi.fn(async () => ({ name: "x.png", buffer: Buffer.from([1]) }));
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pullups", quantity: 5, detail: null }], unparsed: [] })) as never,
+      db: photoDb({ insertEntries: vi.fn(async () => [{ category: "pullups", quantity: 5, userMonthlyTotal: 5, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 5), insertAchievement: vi.fn(async () => false) }),
+      rng: () => 0.99,
+      renderPhoto,
+    } as never);
+    const res = await handleMention("5 pullups", ctx);
+    expect(renderPhoto).not.toHaveBeenCalled();
+    expect(res.files).toBeUndefined();
   });
 
   it("attaches no photo when the magic gate denies", async () => {

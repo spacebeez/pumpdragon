@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import {
-  pickPhrase, photoMoodForAwards, createCooldownGate, SMALL_ACHIEVEMENT_PHOTO_CHANCE, ZEN_PHOTO_CHANCE,
+  pickPhrase, photoMoodForAwards, createCooldownGate, isTinySubmission,
+  SMALL_ACHIEVEMENT_PHOTO_CHANCE, ZEN_PHOTO_CHANCE,
 } from "../src/photos.js";
 import type { Award } from "../src/achievements.js";
 
@@ -14,6 +15,7 @@ describe("pickPhrase", () => {
   it("returns a member of the mood pool, deterministic for fixed rng", () => {
     expect(typeof pickPhrase("roar", () => 0)).toBe("string");
     expect(typeof pickPhrase("zen", () => 0)).toBe("string");
+    expect(typeof pickPhrase("weak", () => 0)).toBe("string");
     expect(pickPhrase("flex", () => 0)).toBe(pickPhrase("flex", () => 0));
   });
 });
@@ -41,6 +43,17 @@ describe("photoMoodForAwards", () => {
   });
   it("empty awards → null", () => {
     expect(photoMoodForAwards([], lo)).toBeNull();
+  });
+});
+
+describe("isTinySubmission", () => {
+  it("flags <10 on pushups/cardio/core, exempts pullups & lifting", () => {
+    expect(isTinySubmission("pushups", 9)).toBe(true);
+    expect(isTinySubmission("cardio", 9)).toBe(true);
+    expect(isTinySubmission("core", 9)).toBe(true);
+    expect(isTinySubmission("pushups", 10)).toBe(false);
+    expect(isTinySubmission("pullups", 5)).toBe(false);  // legit/hard
+    expect(isTinySubmission("lifting", 5)).toBe(false);  // heavy
   });
 });
 

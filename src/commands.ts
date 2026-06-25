@@ -16,7 +16,7 @@ import { parseTimeWindow, type TimeWindow } from "./timewindow.js";
 import { buildRaceReply, buildTrendReply, buildMonthsReply } from "./chart/build.js";
 import { buildInsightsEmbed } from "./insights.js";
 import { evaluateAchievements, type AchievementContext, type Award } from "./achievements.js";
-import { photoMoodForAwards, renderPhoto, createCooldownGate, ZEN_PHOTO_CHANCE, type PhotoMood, type PhotoFile } from "./photos.js";
+import { photoMoodForAwards, renderPhoto, createCooldownGate, isTinySubmission, ZEN_PHOTO_CHANCE, type PhotoMood, type PhotoFile } from "./photos.js";
 
 export interface MentionCtx {
   renderer: Renderer;
@@ -207,7 +207,7 @@ async function converseReply(ctx: MentionCtx, text: string): Promise<Reply> {
   }
   const reply: Reply = { content: result.text };
   if ((isRoastTarget || includeJab) && (ctx.magicPhotoGate ?? defaultMagicGate).allow((ctx.now ?? (() => new Date()))(), rng)) {
-    const photo = await (ctx.renderPhoto ?? renderPhoto)("smug", rng);
+    const photo = await (ctx.renderPhoto ?? renderPhoto)("weak", rng);
     if (photo) reply.files = [photo];
   }
   return reply;
@@ -365,8 +365,11 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     powerMeterText: pm.text,
     achievements: flares,
   });
-  // Achievement pic takes priority; otherwise a rare zen drop on a core/cardio (recovery-ish) log.
+  // Priority: achievement pic > weak clown on a tiny submission (<10 push/cardio/core) > rare zen drop.
   let mood: PhotoMood | null = photoMood;
+  if (!mood && rows.some((r) => isTinySubmission(r.category, r.quantity))) {
+    mood = "weak";
+  }
   if (!mood && rows.some((r) => r.category === "core" || r.category === "cardio") && (ctx.rng ?? Math.random)() < ZEN_PHOTO_CHANCE) {
     mood = "zen";
   }
