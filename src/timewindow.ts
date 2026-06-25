@@ -34,6 +34,12 @@ const MONTHS: Record<string, number> = {
   december: 12, dec: 12,
 };
 
+/** Current month as "YYYY-MM" in the given IANA tz. */
+export function monthKey(now: Date, tz: string): string {
+  const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "2-digit" }).formatToParts(now);
+  return `${p.find((x) => x.type === "year")!.value}-${p.find((x) => x.type === "month")!.value}`;
+}
+
 /** Pure text → TimeWindow, or null if the text names no recognizable window. `now` anchors relative windows. */
 export function parseTimeWindow(text: string, now: Date): TimeWindow | null {
   // input is already lowercased, so no /i flag needed on the prefix strip.

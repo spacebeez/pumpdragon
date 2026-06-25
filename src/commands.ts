@@ -5,13 +5,13 @@ import type { Renderer, LoggedLine, Reply } from "./renderer/types.js";
 import type { ParseResult, LogResultRow } from "./types.js";
 import { unitFor, type Category } from "./categories.js";
 import { isHypeRequest, randomHypePhrase } from "./hype.js";
-import { buildScoreboardEmbed, buildCategoryBoardEmbed, buildStatsCardEmbed, buildCeremonyEmbed } from "./scoreboard.js";
+import { buildScoreboardEmbed, buildCategoryBoardEmbed, buildStatsCardEmbed, buildCeremonyEmbed, buildAchievementsEmbed } from "./scoreboard.js";
 import { lastCompletedMonth } from "./deltas.js";
 import { isHype, powerMeter } from "./scoring.js";
 import { parseAdminCommand, isAdmin, executeAdmin } from "./admin.js";
 import { insertEntries, getCurrentMonthCombinedTotal, getCurrentGoal, getCumulativeMonthlySeries, getGroupMonthlyByUser, getOverallStandings, getMonthEntryCount, getUserMonthCategoryCount, insertAchievement, getStandings, getUserPrevEntryTime, type CumulativeSeriesRow, type UserMonthQtyRow } from "./db/queries.js";
 import type { ConverseInput, ConverseResult, CommandDirective } from "./converse.js";
-import { categoryViewOf, boardCategoryOf, parseStatsRequest, isHelpRequest, parseChartRequest, isInsightsRequest, type StatsRequest, type ChartKind } from "./views.js";
+import { categoryViewOf, boardCategoryOf, parseStatsRequest, parseAchievementsRequest, isHelpRequest, parseChartRequest, isInsightsRequest, type StatsRequest, type ChartKind } from "./views.js";
 import { parseTimeWindow, type TimeWindow } from "./timewindow.js";
 import { buildRaceReply, buildTrendReply, buildMonthsReply } from "./chart/build.js";
 import { buildInsightsEmbed } from "./insights.js";
@@ -173,6 +173,8 @@ async function runDirective(ctx: MentionCtx, d: CommandDirective, now: Date): Pr
       return await showInsights(ctx, now);
     case "help":
       return showHelp(ctx);
+    case "achievements":
+      return await showAchievements(ctx, resolveStatsTarget(d.statsTarget));
   }
 }
 
@@ -244,6 +246,14 @@ async function showInsights(ctx: MentionCtx, now: Date): Promise<Reply> {
   return { embed: await buildInsightsEmbed(ctx.pool, ctx.config, now) };
 }
 
+async function showAchievements(ctx: MentionCtx, target: StatsRequest): Promise<Reply> {
+  const userId = target.self ? ctx.authorId : target.userId;
+  const name = target.self
+    ? ctx.authorName
+    : await ctx.member.guild.members.fetch(userId).then((m) => m.displayName).catch(() => "that warrior");
+  return { embed: await buildAchievementsEmbed(ctx.pool, ctx.config, ctx.renderer, userId, name) };
+}
+
 function showHelp(ctx: MentionCtx): Reply {
   return { embed: ctx.renderer.help({ isAdmin: isAdmin(ctx.member, ctx.config.adminRoleIds) }) };
 }
@@ -291,6 +301,11 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
   if (stats) {
     // NOTE: stats always shows the current month; windowed stats (e.g. "stats @user last month") not yet supported.
     return await showStats(ctx, stats);
+  }
+
+  const ach = parseAchievementsRequest(text);
+  if (ach) {
+    return await showAchievements(ctx, ach);
   }
 
   if (isInsightsRequest(text)) {

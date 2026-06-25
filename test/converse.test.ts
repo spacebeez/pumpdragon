@@ -144,6 +144,9 @@ describe("validateDirective", () => {
     expect(validateDirective({ view: "explode" })).toBeNull();
     expect(validateDirective({})).toBeNull();
   });
+  it("accepts the achievements view", () => {
+    expect(validateDirective({ view: "achievements", stats_target: "me" })).toMatchObject({ view: "achievements", statsTarget: "me" });
+  });
   it("nulls out unknown optionals", () => {
     expect(validateDirective({ view: "chart", chart_kind: "bogus", category: "nope", window: "decade" })).toEqual({
       view: "chart", category: null, chartKind: null, window: null, statsTarget: null,

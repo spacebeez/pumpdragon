@@ -35,6 +35,18 @@ export function parseStatsRequest(text: string): StatsRequest | null {
   return null;
 }
 
+const ACH_SELF_RE = /^(achievements|my achievements|medals|badges)$/i;
+const ACH_MENTION_RE = /^(achievements|medals|badges)\s+<@!?(\d+)>$/i;
+
+/** `achievements` / `my achievements` / `medals` / `badges` (+ optional @mention) → a stats-style target. */
+export function parseAchievementsRequest(text: string): StatsRequest | null {
+  const t = text.trim();
+  if (ACH_SELF_RE.test(t)) return { self: true };
+  const m = t.match(ACH_MENTION_RE);
+  if (m) return { self: false, userId: m[2]! };
+  return null;
+}
+
 const HELP_RE = /^(help|commands|what can you do\??|how do i use you\??|what do you do\??)$/i;
 
 /** True if the whole text is asking for help (not "help me do 50 pushups"). */

@@ -6,6 +6,7 @@ import {
   getOverallStandings, insertAdminEntry, getGoalForMonth, getRecentDetails, insertImportRows,
   getCumulativeMonthlySeries, getUserMonthlySeries, getGroupMonthlyByUser,
   getMonthEntryCount, getUserMonthCategoryCount, insertAchievement, getUserPrevEntryTime,
+  getMonthAchievementsByUser,
 } from "../src/db/queries.js";
 
 const url = process.env.DATABASE_URL_TEST ?? "postgres://pumpdragon:pumpdragon@localhost:5433/pumpdragon_test";
@@ -251,6 +252,20 @@ describe("insertAchievement", () => {
   it("dedups group rows (NULL user) by (key, period)", async () => {
     expect(await insertAchievement(pool, { guildId: G, userId: null, key: "over_9000", periodKey: "2026-06" })).toBe(true);
     expect(await insertAchievement(pool, { guildId: G, userId: null, key: "over_9000", periodKey: "2026-06" })).toBe(false);
+  });
+});
+
+describe("getMonthAchievementsByUser", () => {
+  it("groups user-scoped keys for the month, includes day-keyed, excludes group + other months", async () => {
+    await insertAchievement(pool, { guildId: G, userId: "u1", key: "milestone:pushups:500", periodKey: "2026-06" });
+    await insertAchievement(pool, { guildId: G, userId: "u1", key: "risen", periodKey: "2026-06-25" });        // day-keyed
+    await insertAchievement(pool, { guildId: G, userId: "u2", key: "participation", periodKey: "2026-06" });
+    await insertAchievement(pool, { guildId: G, userId: null, key: "over_9000", periodKey: "2026-06" });        // group → excluded
+    await insertAchievement(pool, { guildId: G, userId: "u1", key: "witching_hour", periodKey: "2026-05" });    // other month
+    const map = await getMonthAchievementsByUser(pool, G, "2026-06");
+    expect(new Set(map.get("u1"))).toEqual(new Set(["milestone:pushups:500", "risen"]));
+    expect(map.get("u2")).toEqual(["participation"]);
+    expect(map.has(null as never)).toBe(false);
   });
 });
 

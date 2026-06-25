@@ -295,6 +295,23 @@ export async function insertAchievement(pool: Pool, a: AchievementInsert): Promi
   return (r.rowCount ?? 0) > 0;
 }
 
+/** User-scoped achievements earned this month, grouped by user. monthPrefix = "YYYY-MM" (guild tz). */
+export async function getMonthAchievementsByUser(pool: Pool, guildId: string, monthPrefix: string): Promise<Map<string, string[]>> {
+  const r = await pool.query<{ discord_user_id: string; achievement_key: string }>(
+    `SELECT discord_user_id, achievement_key FROM achievements
+     WHERE guild_id=$1 AND discord_user_id IS NOT NULL AND period_key LIKE $2`,
+    [guildId, `${monthPrefix}%`],
+  );
+  const map = new Map<string, string[]>();
+  for (const row of r.rows) {
+    if (!row.discord_user_id || !row.achievement_key) continue;
+    const arr = map.get(row.discord_user_id) ?? [];
+    arr.push(row.achievement_key);
+    map.set(row.discord_user_id, arr);
+  }
+  return map;
+}
+
 /** Most recent real-activity entry timestamp for a user (user logs + imports; excludes admin
  *  corrections, whose now()-stamped writes would otherwise mask a genuine comeback gap), or null. */
 export async function getUserPrevEntryTime(pool: Pool, guildId: string, userId: string): Promise<Date | null> {

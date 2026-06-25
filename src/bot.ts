@@ -7,7 +7,7 @@ import { handleMention, isScoreboardRequest } from "./commands.js";
 import { parseActivities } from "./parser.js";
 import { converse, type ConversationMessage } from "./converse.js";
 import { isHypeRequest } from "./hype.js";
-import { isHelpRequest, categoryViewOf, parseStatsRequest, parseChartRequest, isInsightsRequest } from "./views.js";
+import { isHelpRequest, categoryViewOf, parseStatsRequest, parseAchievementsRequest, parseChartRequest, isInsightsRequest } from "./views.js";
 import { parseTimeWindow } from "./timewindow.js";
 
 export function createClient(): Client {
@@ -76,6 +76,7 @@ export function startBot(client: Client, config: Config, pool: Pool): void {
         isHelpRequest(rest) ||
         categoryViewOf(rest) !== null ||
         parseStatsRequest(rest) !== null ||
+        parseAchievementsRequest(rest) !== null ||
         parseChartRequest(rest) !== null ||
         isInsightsRequest(rest) ||
         (win !== null && win.kind !== "namedMonth");

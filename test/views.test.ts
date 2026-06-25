@@ -1,6 +1,22 @@
 // dragon-bot/test/views.test.ts
 import { describe, it, expect } from "vitest";
-import { categoryViewOf, parseStatsRequest, isHelpRequest } from "../src/views.js";
+import { categoryViewOf, parseStatsRequest, isHelpRequest, parseAchievementsRequest } from "../src/views.js";
+
+describe("parseAchievementsRequest", () => {
+  it("matches the self keywords", () => {
+    for (const t of ["achievements", "my achievements", "medals", "badges"]) {
+      expect(parseAchievementsRequest(t)).toEqual({ self: true });
+    }
+  });
+  it("matches a mention target", () => {
+    expect(parseAchievementsRequest("achievements <@99>")).toEqual({ self: false, userId: "99" });
+    expect(parseAchievementsRequest("badges <@!99>")).toEqual({ self: false, userId: "99" });
+  });
+  it("returns null for anything else", () => {
+    expect(parseAchievementsRequest("achievements of war")).toBeNull();
+    expect(parseAchievementsRequest("50 pushups")).toBeNull();
+  });
+});
 
 describe("categoryViewOf", () => {
   it("returns the category for a bare category word/alias", () => {

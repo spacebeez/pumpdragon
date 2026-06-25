@@ -1,8 +1,14 @@
 // dragon-bot/test/timewindow.test.ts
 import { describe, it, expect } from "vitest";
-import { windowSql, parseTimeWindow } from "../src/timewindow.js";
+import { windowSql, parseTimeWindow, monthKey } from "../src/timewindow.js";
 
 const TZ = "America/Chicago";
+
+describe("monthKey", () => {
+  it("returns YYYY-MM in the given tz", () => {
+    expect(monthKey(new Date("2026-06-25T12:00:00Z"), TZ)).toBe("2026-06");
+  });
+});
 
 describe("windowSql", () => {
   it("thisMonth compares created_at month to now's month", () => {

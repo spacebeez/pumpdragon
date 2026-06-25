@@ -79,11 +79,12 @@ const SHOW_DATA_TOOL = {
   description:
     "Show the user a workout data view. Call this ONLY when the user is clearly asking to SEE standings, " +
     "someone's stats, a chart/graph, monthly insights, or how to use the bot. Do NOT call it for casual chat, " +
-    "encouragement, or anything you're unsure about — in that case just reply in character and suggest the command.",
+    "encouragement, or anything you're unsure about — in that case just reply in character and suggest the command. " +
+    "'achievements' = the speaker's (or a mention's) earned badges this month.",
   input_schema: {
     type: "object",
     properties: {
-      view: { type: "string", enum: ["scoreboard", "category_board", "stats", "chart", "insights", "help"] },
+      view: { type: "string", enum: ["scoreboard", "category_board", "stats", "chart", "insights", "help", "achievements"] },
       category: { type: "string", enum: ["pushups", "pullups", "cardio", "core", "lifting"], description: "for category_board and chart" },
       chart_kind: { type: "string", enum: ["race", "mychart", "months"], description: "race = group cumulative; mychart = the speaker's own trend; months = who led each month" },
       window: { type: "string", enum: ["thisMonth", "lastMonth", "allTime"], description: "for scoreboard" },
@@ -93,7 +94,7 @@ const SHOW_DATA_TOOL = {
   },
 } as const;
 
-const DIRECTIVE_VIEWS = ["scoreboard", "category_board", "stats", "chart", "insights", "help"] as const;
+const DIRECTIVE_VIEWS = ["scoreboard", "category_board", "stats", "chart", "insights", "help", "achievements"] as const;
 type DirectiveView = (typeof DIRECTIVE_VIEWS)[number];
 const DIRECTIVE_CHART_KINDS: ChartKind[] = ["race", "mychart", "months"];
 

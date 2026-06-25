@@ -32,6 +32,8 @@ export interface RecapPayload {
   powerMeterText: string;
   /** Optional embed title; defaults to the daily-recap title. */
   title?: string;
+  /** userId → medal emoji string (e.g. "👑🦏+2"), shown on the overall list. */
+  medals?: Record<string, string>;
 }
 
 export interface CategoryBoardPayload {
@@ -49,10 +51,16 @@ export interface StatsCardPayload {
   userTotal: number;      // this user's combined total for the window
   groupTotal: number;     // whole-group combined total for the window
   goal: number | null;    // current group goal (for context), or null
+  medals?: string;        // the user's medal emoji string for the title
 }
 
 export interface HelpPayload {
   isAdmin: boolean;
+}
+
+export interface AchievementsListPayload {
+  name: string;
+  badges: { emoji: string; label: string }[];
 }
 
 export interface CeremonyMvp {
@@ -81,6 +89,7 @@ export interface Renderer {
   statsCard(p: StatsCardPayload): EmbedBuilder;
   help(p: HelpPayload): EmbedBuilder;
   ceremony(p: CeremonyPayload): EmbedBuilder;
+  achievementsList(p: AchievementsListPayload): EmbedBuilder;
 }
 
 export interface Reply {

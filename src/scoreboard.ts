@@ -4,11 +4,12 @@ import type { Config } from "./config.js";
 import type { Renderer } from "./renderer/types.js";
 import {
   getStandings, getOverallStandings, getCurrentMonthCombinedTotal, getCurrentGoal,
-  getGoalForMonth, getRecentDetails,
+  getGoalForMonth, getRecentDetails, getMonthAchievementsByUser,
 } from "./db/queries.js";
 import { powerMeter } from "./scoring.js";
 import { CATEGORIES, unitFor, type Category } from "./categories.js";
-import type { TimeWindow } from "./timewindow.js";
+import { monthKey, type TimeWindow } from "./timewindow.js";
+import { badgeFor, medalString } from "./badges.js";
 import type { Rng } from "./hype.js";
 import { previousMonthOf, mostImproved, fallOffs, type MonthRef } from "./deltas.js";
 import { monthLabel, collectiveLine, ceremonyPowerLine, risingStarLine, ribLine, momentsLine, closeLine } from "./ceremony.js";
@@ -27,7 +28,13 @@ export async function buildScoreboardEmbed(
     category: c.name, unit: c.unit,
     rows: standingsRows.filter((r) => r.category === c.name).map((r) => ({ userId: r.userId, total: r.total })),
   }));
-  return renderer.recap({ overall, standings, powerMeterText: powerMeter(total, goal).text, title });
+  let medals: Record<string, string> | undefined;
+  if (window.kind === "thisMonth") {
+    const map = await getMonthAchievementsByUser(pool, config.guildId, monthKey(new Date(), config.timezone));
+    medals = {};
+    for (const [uid, keys] of map) medals[uid] = medalString(keys);
+  }
+  return renderer.recap({ overall, standings, powerMeterText: powerMeter(total, goal).text, title, medals });
 }
 
 export async function buildCategoryBoardEmbed(
@@ -56,10 +63,23 @@ export async function buildStatsCardEmbed(
   }));
   const userTotal = lines.reduce((a, l) => a + l.total, 0);
   const idx = overall.findIndex((r) => r.userId === userId);
+  let medals: string | undefined;
+  if (window.kind === "thisMonth") {
+    const map = await getMonthAchievementsByUser(pool, config.guildId, monthKey(new Date(), config.timezone));
+    medals = medalString(map.get(userId) ?? []);
+  }
   return renderer.statsCard({
     name, rank: idx === -1 ? null : idx + 1, rankOf: overall.length,
-    lines, userTotal, groupTotal, goal,
+    lines, userTotal, groupTotal, goal, medals,
   });
+}
+
+export async function buildAchievementsEmbed(
+  pool: Pool, config: Pick<Config, "guildId" | "timezone">, renderer: Renderer, userId: string, name: string,
+): Promise<EmbedBuilder> {
+  const map = await getMonthAchievementsByUser(pool, config.guildId, monthKey(new Date(), config.timezone));
+  const badges = (map.get(userId) ?? []).map(badgeFor).sort((a, b) => b.rank - a.rank);
+  return renderer.achievementsList({ name, badges: badges.map((b) => ({ emoji: b.emoji, label: b.label })) });
 }
 
 export async function buildCeremonyEmbed(

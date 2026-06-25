@@ -313,6 +313,33 @@ describe("photo posting", () => {
   });
 });
 
+describe("achievements list command", () => {
+  const achQuery = () => vi.fn(async (sql: string) => {
+    if (/FROM achievements/i.test(sql)) return { rows: [{ discord_user_id: "u1", achievement_key: "regicide:cardio" }], rowCount: 1 };
+    return { rows: [], rowCount: 0 };
+  });
+  it("`achievements` keyword → a list embed with the badge", async () => {
+    const ctx = baseCtx({ authorId: "u1", pool: { query: achQuery() } as never, member: { displayName: "Matt", guild: { members: { fetch: vi.fn(async () => new Map()) } }, permissions: { has: () => true }, roles: { cache: { has: () => false } } } as never });
+    const res = await handleMention("achievements", ctx);
+    expect(res.embed).toBeDefined();
+    expect(JSON.stringify(res.embed?.toJSON())).toMatch(/Regicide/i);
+    expect(ctx.parse).not.toHaveBeenCalled();
+  });
+  it("an NL achievements directive routes to the list embed", async () => {
+    const ctx = baseCtx({
+      authorId: "u1",
+      pool: { query: achQuery() } as never,
+      member: { displayName: "Matt", guild: { members: { cache: { get: () => undefined }, fetch: vi.fn(async () => new Map()) } }, permissions: { has: () => true }, roles: { cache: { has: () => false } } } as never,
+      parse: vi.fn(async () => ({ items: [], unparsed: ["x"] })) as never,
+      converse: vi.fn(async () => ({ kind: "command", directive: { view: "achievements", category: null, chartKind: null, window: null, statsTarget: "me" } })) as never,
+      fetchRecentMessages: vi.fn(async () => []) as never,
+      config: { guildId: "g", timezone: "America/Chicago", adminRoleIds: [], roastUserId: null, roastNickname: null } as never,
+    });
+    const res = await handleMention("what achievements do i have", ctx);
+    expect(JSON.stringify(res.embed?.toJSON())).toMatch(/Regicide/i);
+  });
+});
+
 describe("natural-language command routing", () => {
   const viewQuery = () => vi.fn(async (sql: string) => {
     if (/monthly_goals/i.test(sql)) return { rows: [], rowCount: 0 };

@@ -1,7 +1,7 @@
 import { EmbedBuilder } from "discord.js";
 import type {
   Renderer, LogReplyPayload, RecapPayload,
-  CategoryBoardPayload, StatsCardPayload, HelpPayload, CeremonyPayload,
+  CategoryBoardPayload, StatsCardPayload, HelpPayload, CeremonyPayload, AchievementsListPayload,
 } from "./types.js";
 
 const DRAGON_COLOR = 0xc0392b;
@@ -35,7 +35,10 @@ export class EmbedRenderer implements Renderer {
       .setDescription(p.powerMeterText);
     if (p.overall.length) {
       const body = p.overall
-        .map((r, i) => `${i + 1}. <@${r.userId}> — ${r.total.toLocaleString("en-US")} pts`)
+        .map((r, i) => {
+          const medal = p.medals?.[r.userId];
+          return `${i + 1}. <@${r.userId}>${medal ? ` ${medal}` : ""} — ${r.total.toLocaleString("en-US")} pts`;
+        })
         .join("\n");
       embed.addFields({ name: "🏆 overall", value: body, inline: false });
     }
@@ -62,7 +65,7 @@ export class EmbedRenderer implements Renderer {
     const share = p.groupTotal > 0 ? Math.round((100 * p.userTotal) / p.groupTotal) : 0;
     const goalPart = p.goal ? ` · group goal ${p.goal.toLocaleString("en-US")}` : "";
     const embed = new EmbedBuilder().setColor(DRAGON_COLOR)
-      .setTitle(`🐉 ${p.name} — ${rank}`)
+      .setTitle(`🐉 ${p.name}${p.medals ? ` ${p.medals}` : ""} — ${rank}`)
       .setDescription(`your power this window: **${p.userTotal.toLocaleString("en-US")}** — ${share}% of the group's ${p.groupTotal.toLocaleString("en-US")}${goalPart}`);
     for (const l of p.lines) {
       embed.addFields({ name: `${l.category} (${l.unit})`, value: `**${l.total.toLocaleString("en-US")}**`, inline: true });
@@ -83,6 +86,13 @@ export class EmbedRenderer implements Renderer {
       embed.addFields({ name: "🛠️ admin", value: "`admin add <qty> <cat> @user` · `admin remove <qty> <cat> @user` · `admin goal <n>` · `admin close-month [YYYY-MM]`", inline: false });
     }
     return embed;
+  }
+
+  achievementsList(p: AchievementsListPayload): EmbedBuilder {
+    const body = p.badges.length
+      ? p.badges.map((b) => `${b.emoji} ${b.label}`).join("\n")
+      : "no badges yet this month — go forge some glory. 🔥";
+    return new EmbedBuilder().setColor(DRAGON_COLOR).setTitle(`🐉 ${p.name} — achievements this month`).setDescription(body);
   }
 
   ceremony(p: CeremonyPayload): EmbedBuilder {
