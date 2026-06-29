@@ -26,15 +26,51 @@ export interface AchievementContext {
 export interface Award { key: string; scope: AchievementScope; flare: string; periodKey?: string; }
 export interface AchievementDef { id: string; check: (ctx: AchievementContext) => Award[]; }
 
-/** Per-category monthly milestone tiers [Bronze, Silver, Gold]. Units match the category
- *  (pushups/pullups/lifting = reps, cardio/core = min). Calibrated against 2y of live monthly totals. */
-export const MILESTONE_TIERS: Record<Category, number[]> = {
-  pushups: [500, 2000, 5000],
-  pullups: [150, 300, 450],
-  cardio:  [300, 600, 1000],
-  core:    [60, 150, 250],
-  lifting: [500, 1000, 2000],
+/** Per-category monthly milestone ladder — 5 ascending named tiers. Calibrated 2026-06-29 against ~2y of
+ *  real monthly per-user totals (Jeddy-robust percentiles; pushups anchored to the median cluster, not the
+ *  bimodal high end). Units match the category (pushups/pullups/lifting = reps, cardio/core = min). */
+export interface MilestoneTier { threshold: number; name: string; }
+
+export const MILESTONE_TIERS: Record<Category, MilestoneTier[]> = {
+  cardio: [
+    { threshold: 200, name: "Light Panting" },
+    { threshold: 400, name: "Getting Warmed Up" },
+    { threshold: 700, name: "Big Load Volume" },
+    { threshold: 1000, name: "Going All Night" },
+    { threshold: 1500, name: "Cardio Stallion" },
+  ],
+  core: [
+    { threshold: 25, name: "Tight Squeeze" },
+    { threshold: 75, name: "Hard Thruster" },
+    { threshold: 150, name: "Deep Hold" },
+    { threshold: 220, name: "Quivering Finish" },
+    { threshold: 280, name: "Rock Solid Core" },
+  ],
+  pushups: [
+    { threshold: 100, name: "Just the Tip" },
+    { threshold: 400, name: "Pushing Deep" },
+    { threshold: 1000, name: "All the Way Down" },
+    { threshold: 2500, name: "Full Extension" },
+    { threshold: 5000, name: "Beat the Mattress" },
+  ],
+  pullups: [
+    { threshold: 30, name: "First Grip" },
+    { threshold: 100, name: "Tugging Hard" },
+    { threshold: 200, name: "Chin Over the Bar" },
+    { threshold: 325, name: "Hung & Held" },
+    { threshold: 450, name: "Dead Hang Daddy" },
+  ],
+  lifting: [
+    { threshold: 200, name: "Light Handful" },
+    { threshold: 500, name: "Nice Rack" },
+    { threshold: 1000, name: "Heavy Load" },
+    { threshold: 1750, name: "Full Clean & Jerk" },
+    { threshold: 2500, name: "Maxed Out & Throbbing" },
+  ],
 };
+
+/** Ascending tier medals, index 0–4. */
+export const TIER_EMOJI = ["🥉", "🥈", "🥇", "💎", "👑"] as const;
 
 /** Single-log "monster" thresholds for ABSOLUTE UNIT. Units match the category. */
 export const SINGLE_LOG_UNIT: Record<Category, number> = {
@@ -77,12 +113,14 @@ export const ACHIEVEMENTS: AchievementDef[] = [
       const out: Award[] = [];
       for (const d of ctx.logged) {
         const before = d.monthTotalAfter - d.quantity;
-        for (const tier of MILESTONE_TIERS[d.category]) {
-          if (before < tier && d.monthTotalAfter >= tier) {
+        const tiers = MILESTONE_TIERS[d.category];
+        for (let i = 0; i < tiers.length; i++) {
+          const t = tiers[i]!;
+          if (before < t.threshold && d.monthTotalAfter >= t.threshold) {
             out.push({
-              key: `milestone:${d.category}:${tier}`,
+              key: `milestone:${d.category}:${t.threshold}`,
               scope: "user",
-              flare: `🏔️ ${mention(ctx.userId)} just crossed **${tier.toLocaleString("en-US")} ${d.category}** this month. the ascension continues.`,
+              flare: `${TIER_EMOJI[i]!} ${mention(ctx.userId)} just unlocked **${t.name}** — ${t.threshold.toLocaleString("en-US")}+ ${d.category} this month. 🐉`,
             });
           }
         }

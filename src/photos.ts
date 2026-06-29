@@ -52,6 +52,8 @@ const RENDER_WIDTH = 1024;
 export const SMALL_ACHIEVEMENT_PHOTO_CHANCE = 0.12;
 /** ~10% chance a core/cardio log (no achievement) drops a zen recovery dragon. */
 export const ZEN_PHOTO_CHANCE = 0.1;
+/** ~20% chance a normal workout log (no achievement / tiny / zen) drops a roar/flex hype dragon. */
+export const GENERAL_HYPE_CHANCE = 0.2;
 
 /** A "tiny submission" worth a weak-dragon clown: under 10 of a category where single digits = genuinely weak.
  *  Pullups & lifting are exempt — low reps there are legit/hard, not weak. */
@@ -76,11 +78,12 @@ export function pickPhrase(mood: PhotoMood, rng: () => number): string {
   return pool[i]!;
 }
 
-function isGoldMilestone(key: string): boolean {
+function isTopMilestone(key: string): boolean {
   const m = key.match(/^milestone:([a-z]+):(\d+)$/);
   if (!m || !m[1] || !m[2]) return false; // narrow m[1]/m[2] to string (noUncheckedIndexedAccess)
   const tiers = MILESTONE_TIERS[m[1] as Category];
-  return Array.isArray(tiers) && Number(m[2]) === Math.max(...tiers);
+  if (!Array.isArray(tiers) || tiers.length === 0) return false;
+  return Number(m[2]) === tiers[tiers.length - 1]!.threshold;
 }
 
 /** Pick a mood for the just-earned achievements: BIG ones always; small ones at a low random chance. */
@@ -91,7 +94,7 @@ export function photoMoodForAwards(awards: Award[], rng: () => number): PhotoMoo
   if (keys.some((k) => k.startsWith("absolute_unit:"))) return "roar";
   if (keys.includes("first_blood")) return "flex";
   if (keys.includes("all_food_groups")) return "flex";
-  if (keys.some(isGoldMilestone)) return "flex";
+  if (keys.some(isTopMilestone)) return "flex";
   // SMALL — variable reward
   if (awards.length === 0) return null;
   if (rng() >= SMALL_ACHIEVEMENT_PHOTO_CHANCE) return null;

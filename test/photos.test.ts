@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import {
   pickPhrase, photoMoodForAwards, createCooldownGate, isTinySubmission,
-  SMALL_ACHIEVEMENT_PHOTO_CHANCE, ZEN_PHOTO_CHANCE,
+  SMALL_ACHIEVEMENT_PHOTO_CHANCE, ZEN_PHOTO_CHANCE, GENERAL_HYPE_CHANCE,
 } from "../src/photos.js";
 import type { Award } from "../src/achievements.js";
 
@@ -72,6 +72,7 @@ describe("createCooldownGate", () => {
   it("the documented chance constants", () => {
     expect(SMALL_ACHIEVEMENT_PHOTO_CHANCE).toBe(0.12);
     expect(ZEN_PHOTO_CHANCE).toBe(0.1);
+    expect(GENERAL_HYPE_CHANCE).toBe(0.2);
   });
 });
 

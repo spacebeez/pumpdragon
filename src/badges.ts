@@ -1,5 +1,5 @@
 // Achievement key → display badge (emoji, label, prestige rank) + a compact medal string for names.
-import { MILESTONE_TIERS } from "./achievements.js";
+import { MILESTONE_TIERS, TIER_EMOJI } from "./achievements.js";
 import type { Category } from "./categories.js";
 
 export interface Badge { emoji: string; label: string; rank: number; }
@@ -17,12 +17,11 @@ export function badgeFor(key: string): Badge {
   if (parts[0] === "absolute_unit" && parts[1]) return { emoji: "🦏", label: `Absolute Unit (${parts[1]})`, rank: 85 };
   if (parts[0] === "milestone" && parts[1] && parts[2]) {
     const cat = parts[1] as Category;
-    const tier = Number(parts[2]);
-    if (Number.isNaN(tier)) return { emoji: "🏅", label: key, rank: 0 };
+    const threshold = Number(parts[2]);
     const tiers = MILESTONE_TIERS[cat];
-    const i = Array.isArray(tiers) ? tiers.indexOf(tier) : -1;
-    const rank = i === 2 ? 75 : i === 1 ? 55 : 35;
-    return { emoji: "🏔️", label: `${tier.toLocaleString("en-US")} ${cat}`, rank };
+    const i = Array.isArray(tiers) ? tiers.findIndex((t) => t.threshold === threshold) : -1;
+    if (i === -1) return { emoji: "🏅", label: key, rank: 0 };
+    return { emoji: TIER_EMOJI[i]!, label: tiers[i]!.name, rank: 35 + i * 12 };  // 35,47,59,71,83
   }
   if (parts[0] === "cursed" && parts[1] && parts[2]) {
     const n = Number(parts[2]);

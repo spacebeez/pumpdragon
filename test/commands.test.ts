@@ -273,18 +273,18 @@ describe("photo posting", () => {
     expect(res.files).toEqual([fakePhoto]);
   });
 
-  it("no zen photo on a non-core/cardio log even when the roll would hit", async () => {
+  it("a non-core/cardio log never drops a ZEN photo (zen is core/cardio-only)", async () => {
     const renderPhoto = vi.fn(async () => ({ name: "x.png", buffer: Buffer.from([1]) }));
     const ctx = baseCtx({
       pool: {} as never,
       parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 30, detail: null }], unparsed: [] })) as never,
       db: photoDb({ insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 30, userMonthlyTotal: 30, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 30), insertAchievement: vi.fn(async () => false) }),
-      rng: () => 0.01,
+      rng: () => 0.01, // would pass the zen roll, but pushups isn't core/cardio → falls to general hype (roar/flex), never zen
       renderPhoto,
     } as never);
-    const res = await handleMention("30 pushups", ctx);
-    expect(renderPhoto).not.toHaveBeenCalled();
-    expect(res.files).toBeUndefined();
+    await handleMention("30 pushups", ctx);
+    const moodArg = renderPhoto.mock.calls[0]?.[0];
+    expect(moodArg).not.toBe("zen");
   });
 
   it("attaches a weak photo on a magic roast when the gate allows", async () => {
@@ -310,6 +310,35 @@ describe("photo posting", () => {
     const res = await handleMention("5 pushups", ctx);
     expect(renderPhoto).toHaveBeenCalledWith("weak", expect.any(Function));
     expect(res.files).toEqual([fakePhoto]);
+  });
+
+  it("drops a roar/flex hype photo on a normal log when the roll hits", async () => {
+    const fakePhoto = { name: "dragon-roar.png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) };
+    const renderPhoto = vi.fn(async () => fakePhoto);
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 50, detail: null }], unparsed: [] })) as never,
+      db: photoDb({ insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 50, userMonthlyTotal: 50, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 50), insertAchievement: vi.fn(async () => false) }),
+      rng: () => 0.1, // below GENERAL_HYPE_CHANCE → hype fires; 0.1<0.5 → roar
+      renderPhoto,
+    } as never);
+    const res = await handleMention("50 pushups", ctx);
+    expect(renderPhoto).toHaveBeenCalledWith("roar", expect.any(Function));
+    expect(res.files).toEqual([fakePhoto]);
+  });
+
+  it("no hype photo when the roll misses", async () => {
+    const renderPhoto = vi.fn(async () => ({ name: "x.png", buffer: Buffer.from([1]) }));
+    const ctx = baseCtx({
+      pool: {} as never,
+      parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 50, detail: null }], unparsed: [] })) as never,
+      db: photoDb({ insertEntries: vi.fn(async () => [{ category: "pushups", quantity: 50, userMonthlyTotal: 50, trailingAverage: 0, priorCount: 0, hype: false, detail: null }]), getCurrentMonthCombinedTotal: vi.fn(async () => 50), insertAchievement: vi.fn(async () => false) }),
+      rng: () => 0.99, // above GENERAL_HYPE_CHANCE → no hype
+      renderPhoto,
+    } as never);
+    const res = await handleMention("50 pushups", ctx);
+    expect(renderPhoto).not.toHaveBeenCalled();
+    expect(res.files).toBeUndefined();
   });
 
   it("does NOT mock a tiny pullups submission (<10 pullups is legit)", async () => {
@@ -518,11 +547,11 @@ describe("achievement awards on log", () => {
   }
 
   it("a log that crosses a milestone renders the achievement flare", async () => {
-    const ctx = baseCtx({ pool: {} as never, parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 600, detail: null }], unparsed: [] })) as never, db: achDb() });
+    const ctx = baseCtx({ pool: {} as never, parse: vi.fn(async () => ({ items: [{ category: "pushups", quantity: 600, detail: null }], unparsed: [] })) as never, db: achDb(), rng: () => 0.99 } as never);
     const res = await handleMention("600 pushups", ctx);
     const json = JSON.stringify(res.embed?.toJSON());
     expect(json).toContain("ACHIEVEMENT UNLOCKED");
-    expect(json).toContain("500 pushups");
+    expect(json).toContain("Pushing Deep"); // 600 pushups crosses Just the Tip (100) + Pushing Deep (400)
   });
 
   it("a normal log (no crossing) renders no achievement field", async () => {

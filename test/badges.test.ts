@@ -16,10 +16,13 @@ describe("badgeFor", () => {
     expect(badgeFor("cursed:core:69")).toMatchObject({ emoji: "😏", label: "Nice." });
     expect(badgeFor("cursed:core:666")).toMatchObject({ emoji: "😈" });
   });
-  it("ranks milestone tiers bronze<silver<gold and labels with the number", () => {
-    expect(badgeFor("milestone:pushups:500")).toMatchObject({ emoji: "🏔️", label: "500 pushups", rank: 35 });   // bronze
-    expect(badgeFor("milestone:pushups:2000")).toMatchObject({ rank: 55 });                                      // silver
-    expect(badgeFor("milestone:pushups:5000")).toMatchObject({ label: "5,000 pushups", rank: 75 });              // gold
+  it("maps milestone tiers to their name + ascending tier medal", () => {
+    expect(badgeFor("milestone:pushups:100")).toMatchObject({ emoji: "🥉", label: "Just the Tip", rank: 35 });
+    expect(badgeFor("milestone:pushups:5000")).toMatchObject({ emoji: "👑", label: "Beat the Mattress", rank: 83 });
+    expect(badgeFor("milestone:cardio:700")).toMatchObject({ emoji: "🥇", label: "Big Load Volume", rank: 59 });
+  });
+  it("falls back for a retired/unknown milestone threshold", () => {
+    expect(badgeFor("milestone:pushups:500")).toEqual({ emoji: "🏅", label: "milestone:pushups:500", rank: 0 });
   });
   it("falls back for an unknown key without throwing", () => {
     expect(badgeFor("wat:nonsense")).toEqual({ emoji: "🏅", label: "wat:nonsense", rank: 0 });

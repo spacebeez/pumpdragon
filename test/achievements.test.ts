@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateAchievements, MILESTONE_TIERS, type AchievementContext } from "../src/achievements.js";
+import { evaluateAchievements, MILESTONE_TIERS, TIER_EMOJI, type AchievementContext } from "../src/achievements.js";
 
 const base: AchievementContext = {
   userId: "u1",
@@ -45,27 +45,36 @@ describe("all_food_groups", () => {
 });
 
 describe("milestones", () => {
-  it("fires for each tier crossed by this log in a category", () => {
-    // pushups tiers 500/2000/5000 — logging 600 with month total 600 crosses 500 only
+  it("fires the named tiers crossed by this log", () => {
+    // pushups tiers 100/400/1000/2500/5000 — a 600 month total crosses 100 (Just the Tip) + 400 (Pushing Deep)
     const ks = keys({ ...base, logged: [{ category: "pushups", quantity: 600, monthTotalAfter: 600 }] });
-    expect(ks).toContain("milestone:pushups:500");
-    expect(ks).not.toContain("milestone:pushups:2000");
+    expect(ks).toContain("milestone:pushups:100");
+    expect(ks).toContain("milestone:pushups:400");
+    expect(ks).not.toContain("milestone:pushups:1000");
   });
-  it("can cross two tiers in one big log", () => {
-    // before = 5100-5000 = 100; after 5100 crosses 500, 2000, AND 5000
-    const ks = keys({ ...base, logged: [{ category: "pushups", quantity: 5000, monthTotalAfter: 5100 }] });
-    expect(ks).toEqual(expect.arrayContaining(["milestone:pushups:500", "milestone:pushups:2000", "milestone:pushups:5000"]));
+  it("flare names the tier", () => {
+    const a = evaluateAchievements({ ...base, logged: [{ category: "pushups", quantity: 100, monthTotalAfter: 100 }] })
+      .find((x) => x.key === "milestone:pushups:100")!;
+    expect(a.flare).toContain("Just the Tip");
+  });
+  it("a monster log can cross all five tiers", () => {
+    const ks = keys({ ...base, logged: [{ category: "pushups", quantity: 5000, monthTotalAfter: 5000 }] });
+    expect(ks).toEqual(expect.arrayContaining([
+      "milestone:pushups:100", "milestone:pushups:400", "milestone:pushups:1000",
+      "milestone:pushups:2500", "milestone:pushups:5000",
+    ]));
   });
   it("does not re-fire a tier already passed before this log", () => {
-    // before = 700-100 = 600 (already past 500); after 700 still below 2000 → no tier crossed
+    // before = 700-100 = 600 (past 100 & 400); after 700 still below 1000 → no new tier
     const ks = keys({ ...base, logged: [{ category: "pushups", quantity: 100, monthTotalAfter: 700 }] });
     expect(ks.filter((k) => k.startsWith("milestone:pushups"))).toEqual([]);
   });
-  it("uses per-category tiers", () => {
-    expect(MILESTONE_TIERS.core).toEqual([60, 150, 250]);
-    expect(MILESTONE_TIERS.pullups).toEqual([150, 300, 450]);
-    const ks = keys({ ...base, logged: [{ category: "core", quantity: 60, monthTotalAfter: 60 }] });
-    expect(ks).toContain("milestone:core:60");
+  it("uses per-category named tiers", () => {
+    expect(MILESTONE_TIERS.core.map((t) => t.threshold)).toEqual([25, 75, 150, 220, 280]);
+    expect(MILESTONE_TIERS.pullups[4]!.name).toBe("Dead Hang Daddy");
+    expect(TIER_EMOJI).toHaveLength(5);
+    const ks = keys({ ...base, logged: [{ category: "core", quantity: 25, monthTotalAfter: 25 }] });
+    expect(ks).toContain("milestone:core:25");
   });
 });
 
