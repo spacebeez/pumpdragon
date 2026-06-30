@@ -1,27 +1,42 @@
-# PumpDragon photos — usage guide
+# PumpDragon photos — image map
 
-Three Gemini-generated images of the dragon in **IRON DRAGON GYM**, one per emotional register.
-Names are mood-based so the (future) image-posting feature can map a bot moment → the right pic.
+The dragon posts a captioned photo on certain moments. Selection is **mood-based**: a moment picks a
+mood, the bot globs every `dragon-<mood>*.png` in this folder, picks one at random, overlays a bold
+impact caption (random from that mood's phrase pool), downscales to ~1024px wide, and attaches it.
 
-> Not yet wired into the bot. This folder + labels are the groundwork for the image-posting feature
-> (we still need to decide: where they live at runtime, and what triggers a post). See "Open questions" below.
+**Live in production.** PNGs are **gitignored** (large binaries) and bundled into the container at deploy
+(`COPY photos ./photos` → `/app/photos`). Only this README is tracked. Code: `src/photos.ts`
+(`renderPhoto`, `PHRASE_POOLS`, `photoMoodForAwards`, the cooldown gate) and the `src/commands.ts` log
+branch (trigger priority).
 
-| File | Vibe | Post it when… |
-|------|------|---------------|
-| **dragon-roar.png** | Feral, aggressive — seated at a loaded bar, **jaws wide open mid-roar**, steam everywhere. | The savage moments: **REGICIDE**, a brutal burn, an **ABSOLUTE UNIT** single-log, a "prove it / get in the gym" challenge, raw feral hype. Pair with the meanest lines. |
-| **dragon-smug.png** | Cocky, composed — same seated-at-the-bar pose but **mouth shut, smug, staring you down**. | The roast-flirt tease: replies to **magic**, smug comebacks, the unprompted jab, "come prove it, big boy." The default "I'm unimpressed but intrigued" face. |
-| **dragon-flex.png** | Triumphant — **standing double-biceps flex**, glowing backlight, showoff grin. | Celebration: **milestones / achievements unlocked**, monthly **goal hit**, **FIRST BLOOD** / **OVER 9,000**, "hype me up," a genuine W. The reward pic. |
+## The five moods
 
-## Quick mapping (mood → file)
+| Mood | Count | Fires on… | Caption pool vibe |
+|------|------|-----------|-------------------|
+| 🦁 **flex** | 12 | **Big achievements** (always): OVER 9,000, FIRST BLOOD, ALL THE FOOD GROUPS, a 👑 top-tier milestone. Plus small achievements (~12%): lower milestones, RISEN. Plus the general-hype drop (see below). | Triumphant: `ASCENDED`, `LEGEND`, `CERTIFIED UNIT`, eruption double-entendres. |
+| 🔥 **roar** | 8 | **REGICIDE** + **ABSOLUTE UNIT** achievements. Plus the general-hype drop. | Savage/effort: `CRUSHER`, `RAW POWER`, `DESTROYER`, eruption lines. |
+| 🦎 **weak** | 6 | **Tiny submissions** — a log under 10 of pushups/cardio/core (pullups & lifting exempt; low reps there are legit). Plus **magic burns** (the roast target, ~20% chance, 15-min cooldown). | Mocking: `WEAK WYRM`, `SCRAWNY SMAUG`, `LOSER LIZARD`, `COUCH DRAGON`. |
+| 🧘 **zen** | 3 | ~10% of **core/cardio** logs (recovery easter egg). | Calm-beast: `NAMASTE, BEAST`, `RECOVERY IS A WEAPON`, `STRETCH OR SNAP`. |
+| 😏 **smug** | 3 | **Small-achievement drops only** (~12%): PARTICIPATION, cursed numbers (NICE/BLAZE IT/BEAST), THE 3 A.M. CONFESSIONAL. *(Magic burns moved to `weak`.)* | Cocky + a few jabs: `DRAGON PUMP`, `FULL SEND`, `PROVE IT`. |
 
-- **savage / roar / regicide / monster-lift** → `dragon-roar.png`
-- **roast / flirt / smug jab / magic** → `dragon-smug.png`
-- **celebrate / milestone / goal / hype** → `dragon-flex.png`
+**Trigger priority** on a workout log (first match wins): achievement photo → `weak` (tiny submission) →
+`zen` (~10% core/cardio) → **general hype** (~20%, picks `roar` or `flex` 50/50). So a normal log with no
+achievement still has a ~20% shot at a roar/flex hype dragon — that's what keeps the big pools in rotation.
 
-## Open questions for the posting feature (when we build it)
+## Adding more
 
-1. **Runtime storage** — bundle in the Docker image at `/opt/dragon-bot/photos` (simple, but ~25 MB in git/image), or host them and fetch by URL? Leaning bundle, since it's only 3 files and avoids an external dependency.
-2. **Trigger** — random chance on the unprompted jab? When magic specifically talks? On an achievement unlock? An admin command? Probably a mix, keyed by the mood table above.
-3. **Caption** — drop the pic alone, or pair it with a roast/hype line? (Likely: line + image, mood-matched.)
+Drop a PNG named `dragon-<mood>-<n>.png` (e.g. `dragon-roar-9.png`) into this folder. The glob
+auto-includes it — **no code change** — it just needs the next deploy to bundle it. To add a phrase to a
+mood's caption pool, edit `PHRASE_POOLS` in `src/photos.ts`.
 
-These get decided in that feature's brainstorm — this file just makes sure each image has a clear, agreed purpose first.
+## Not yet wired (planned)
+
+- **Caption matches the achievement** — when a photo fires from an achievement unlock, overlay the unlocked
+  tier's name (e.g. `BEAT THE MATTRESS`) instead of a random pool phrase, so the dragon + caption + flare
+  line all agree. Non-achievement photos (weak/zen/hype) keep their random pools.
+- **Category-specific dragons** — a future `dragon-<category>-*.png` axis (cardio/core/pushups/pullups/
+  lifting) so a cardio milestone pulls a *cardio* dragon. Generate via the gym-dragon style prompts; wiring
+  is a small follow-on keyed by category alongside the caption-match above.
+
+> Note: the medal emojis shown next to names on the scoreboard/stats are a **separate** feature (the badge
+> catalog in `src/badges.ts`), not these photos.
