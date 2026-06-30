@@ -4,6 +4,7 @@ import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { createCanvas, loadImage, GlobalFonts, type Image } from "@napi-rs/canvas";
 import { MILESTONE_TIERS, type Award } from "./achievements.js";
+import { badgeFor } from "./badges.js";
 import type { Category } from "./categories.js";
 
 export type PhotoMood = "roar" | "smug" | "flex" | "zen" | "weak";
@@ -86,21 +87,26 @@ function isTopMilestone(key: string): boolean {
   return Number(m[2]) === tiers[tiers.length - 1]!.threshold;
 }
 
-/** Pick a mood for the just-earned achievements: BIG ones always; small ones at a low random chance. */
-export function photoMoodForAwards(awards: Award[], rng: () => number): PhotoMood | null {
+/** Pick a mood + caption for the just-earned achievements: BIG ones always; small ones at a low random
+ *  chance. The caption is the headline (priority-driving) achievement's name, so the dragon's overlaid
+ *  text matches the unlock line. Returns null when no photo should fire. */
+export function photoMoodForAwards(awards: Award[], rng: () => number): { mood: PhotoMood; caption: string } | null {
   const keys = awards.map((a) => a.key);
-  if (keys.includes("over_9000")) return "flex";
-  if (keys.some((k) => k.startsWith("regicide:"))) return "roar";
-  if (keys.some((k) => k.startsWith("absolute_unit:"))) return "roar";
-  if (keys.includes("first_blood")) return "flex";
-  if (keys.includes("all_food_groups")) return "flex";
-  if (keys.some(isTopMilestone)) return "flex";
+  const hit = (key: string, mood: PhotoMood) => ({ mood, caption: badgeFor(key).label });
+  let k: string | undefined;
+  if (keys.includes("over_9000")) return hit("over_9000", "flex");
+  if ((k = keys.find((x) => x.startsWith("regicide:")))) return hit(k, "roar");
+  if ((k = keys.find((x) => x.startsWith("absolute_unit:")))) return hit(k, "roar");
+  if (keys.includes("first_blood")) return hit("first_blood", "flex");
+  if (keys.includes("all_food_groups")) return hit("all_food_groups", "flex");
+  if ((k = keys.find(isTopMilestone))) return hit(k, "flex");
   // SMALL — variable reward
   if (awards.length === 0) return null;
   if (rng() >= SMALL_ACHIEVEMENT_PHOTO_CHANCE) return null;
-  if (keys.some((k) => k.startsWith("milestone:"))) return "flex";
-  if (keys.includes("risen")) return "flex";
-  return "smug"; // participation / cursed / witching
+  if ((k = keys.find((x) => x.startsWith("milestone:")))) return hit(k, "flex");
+  if (keys.includes("risen")) return hit("risen", "flex");
+  k = keys.find((x) => x === "participation" || x.startsWith("cursed:") || x === "witching_hour") ?? keys[0];
+  return k ? hit(k, "smug") : null; // participation / cursed / witching
 }
 
 /** Stateful gate: at most one `true` per cooldown, and only when the chance roll hits. */
@@ -149,8 +155,9 @@ async function loadBaseFile(file: string): Promise<Image | null> {
   }
 }
 
-/** Load the base image, overlay a random mood caption, return the composite PNG. Null on any miss/error. */
-export async function renderPhoto(mood: PhotoMood, rng: () => number): Promise<PhotoFile | null> {
+/** Load the base image, overlay a caption (explicit `caption` if given, else a random mood phrase), return
+ *  the composite PNG. Null on any miss/error. */
+export async function renderPhoto(mood: PhotoMood, rng: () => number, caption?: string): Promise<PhotoFile | null> {
   try {
     const files = filesForMood(mood);
     if (files.length === 0) return null;
@@ -163,7 +170,7 @@ export async function renderPhoto(mood: PhotoMood, rng: () => number): Promise<P
     const ctx = canvas.getContext("2d");
     ctx.drawImage(base, 0, 0, w, h);
 
-    const text = pickPhrase(mood, rng).toUpperCase();
+    const text = (caption ?? pickPhrase(mood, rng)).toUpperCase();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.lineJoin = "round";

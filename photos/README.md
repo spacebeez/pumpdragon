@@ -2,7 +2,9 @@
 
 The dragon posts a captioned photo on certain moments. Selection is **mood-based**: a moment picks a
 mood, the bot globs every `dragon-<mood>*.png` in this folder, picks one at random, overlays a bold
-impact caption (random from that mood's phrase pool), downscales to ~1024px wide, and attaches it.
+impact caption, downscales to ~1024px wide, and attaches it. **Achievement** photos caption with the
+**unlocked tier's name** (e.g. `BEAT THE MATTRESS`), matching the flare line; all other triggers use a
+random phrase from that mood's pool.
 
 **Live in production.** PNGs are **gitignored** (large binaries) and bundled into the container at deploy
 (`COPY photos ./photos` → `/app/photos`). Only this README is tracked. Code: `src/photos.ts`
@@ -31,12 +33,9 @@ mood's caption pool, edit `PHRASE_POOLS` in `src/photos.ts`.
 
 ## Not yet wired (planned)
 
-- **Caption matches the achievement** — when a photo fires from an achievement unlock, overlay the unlocked
-  tier's name (e.g. `BEAT THE MATTRESS`) instead of a random pool phrase, so the dragon + caption + flare
-  line all agree. Non-achievement photos (weak/zen/hype) keep their random pools.
 - **Category-specific dragons** — a future `dragon-<category>-*.png` axis (cardio/core/pushups/pullups/
-  lifting) so a cardio milestone pulls a *cardio* dragon. Generate via the gym-dragon style prompts; wiring
-  is a small follow-on keyed by category alongside the caption-match above.
+  lifting) so a cardio milestone pulls a *cardio* dragon (instead of a generic flex/roar). Generate via the
+  gym-dragon style prompts; wiring is a small follow-on keyed by category, reusing the caption-match path.
 
 > Note: the medal emojis shown next to names on the scoreboard/stats are a **separate** feature (the badge
 > catalog in `src/badges.ts`), not these photos.

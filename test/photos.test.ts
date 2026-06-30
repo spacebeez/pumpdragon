@@ -23,23 +23,24 @@ describe("pickPhrase", () => {
 describe("photoMoodForAwards", () => {
   const hi = () => 0.99; // above the small-chance threshold
   const lo = () => 0.01; // below it
-  it("big achievements always map (rng ignored)", () => {
-    expect(photoMoodForAwards([award("over_9000")], hi)).toBe("flex");
-    expect(photoMoodForAwards([award("regicide:cardio")], hi)).toBe("roar");
-    expect(photoMoodForAwards([award("absolute_unit:pushups")], hi)).toBe("roar");
-    expect(photoMoodForAwards([award("first_blood")], hi)).toBe("flex");
-    expect(photoMoodForAwards([award("all_food_groups")], hi)).toBe("flex");
-    expect(photoMoodForAwards([award("milestone:pushups:5000")], hi)).toBe("flex"); // gold
+  it("big achievements always map (rng ignored), with a matching caption", () => {
+    expect(photoMoodForAwards([award("over_9000")], hi)).toEqual({ mood: "flex", caption: "It's Over 9,000" });
+    expect(photoMoodForAwards([award("regicide:cardio")], hi)).toEqual({ mood: "roar", caption: "Regicide (cardio)" });
+    expect(photoMoodForAwards([award("absolute_unit:pushups")], hi)?.mood).toBe("roar");
+    expect(photoMoodForAwards([award("first_blood")], hi)?.mood).toBe("flex");
+    expect(photoMoodForAwards([award("all_food_groups")], hi)?.mood).toBe("flex");
+    // top pushups tier → flex, caption is the tier name
+    expect(photoMoodForAwards([award("milestone:pushups:5000")], hi)).toEqual({ mood: "flex", caption: "Beat the Mattress" });
   });
-  it("priority: over_9000 wins over a roar achievement", () => {
-    expect(photoMoodForAwards([award("regicide:cardio"), award("over_9000")], hi)).toBe("flex");
+  it("priority: over_9000 wins over a roar achievement (and drives the caption)", () => {
+    expect(photoMoodForAwards([award("regicide:cardio"), award("over_9000")], hi)).toEqual({ mood: "flex", caption: "It's Over 9,000" });
   });
   it("small achievements are rng-gated", () => {
-    expect(photoMoodForAwards([award("milestone:pushups:500")], hi)).toBeNull();   // bronze, roll misses
-    expect(photoMoodForAwards([award("milestone:pushups:500")], lo)).toBe("flex"); // bronze, roll hits
-    expect(photoMoodForAwards([award("participation")], lo)).toBe("smug");
-    expect(photoMoodForAwards([award("cursed:pushups:69")], lo)).toBe("smug");
-    expect(photoMoodForAwards([award("risen")], lo)).toBe("flex");
+    expect(photoMoodForAwards([award("milestone:pushups:500")], hi)).toBeNull();        // retired key, roll misses
+    expect(photoMoodForAwards([award("milestone:pushups:500")], lo)?.mood).toBe("flex"); // roll hits
+    expect(photoMoodForAwards([award("participation")], lo)).toEqual({ mood: "smug", caption: "Participation" });
+    expect(photoMoodForAwards([award("cursed:pushups:69")], lo)?.mood).toBe("smug");
+    expect(photoMoodForAwards([award("risen")], lo)?.mood).toBe("flex");
   });
   it("empty awards → null", () => {
     expect(photoMoodForAwards([], lo)).toBeNull();
@@ -88,6 +89,17 @@ describe("renderPhoto", () => {
     expect(out).not.toBeNull();
     expect(out!.name).toBe("dragon-smug.png");
     expect([...out!.buffer.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]); // PNG signature
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("uses an explicit caption when given", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pd-photos-cap-"));
+    writeFileSync(join(dir, "dragon-flex.png"), createCanvas(40, 60).toBuffer("image/png"));
+    process.env.PHOTOS_DIR = dir;
+    const { renderPhoto } = await import("../src/photos.js");
+    const out = await renderPhoto("flex", () => 0, "Beat the Mattress");
+    expect(out).not.toBeNull();
+    expect([...out!.buffer.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]); // valid PNG (caption branch didn't crash)
     rmSync(dir, { recursive: true, force: true });
   });
 

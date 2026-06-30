@@ -240,7 +240,7 @@ describe("photo posting", () => {
       renderPhoto,
     } as never);
     const res = await handleMention("200 pushups", ctx);
-    expect(renderPhoto).toHaveBeenCalledWith("flex", expect.any(Function));
+    expect(renderPhoto).toHaveBeenCalledWith("flex", expect.any(Function), "It's Over 9,000"); // caption matches the unlock
     expect(res.files).toEqual([fakePhoto]);
   });
 

@@ -41,7 +41,7 @@ export interface MentionCtx {
   converse?: (input: ConverseInput) => Promise<ConverseResult>;
   fetchRecentMessages?: () => Promise<import("./converse.js").ConversationMessage[]>;
   rng?: () => number;
-  renderPhoto?: (mood: PhotoMood, rng: () => number) => Promise<PhotoFile | null>;
+  renderPhoto?: (mood: PhotoMood, rng: () => number, caption?: string) => Promise<PhotoFile | null>;
   magicPhotoGate?: { allow(now: Date, rng: () => number): boolean };
 }
 
@@ -79,7 +79,7 @@ const defaultMagicGate = createCooldownGate({ chance: 0.2, cooldownMs: 15 * 60_0
 /** Build the achievement context from this log, evaluate, write newly-earned rows, return flare lines.
  *  Wrapped so a detection failure NEVER breaks the log reply. `groupMonthAfter` is the post-log group total.
  *  `prevEntryTime` is the user's most recent entry timestamp captured BEFORE this log's insert. */
-async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[], groupMonthAfter: number, prevEntryTime: Date | null): Promise<{ flares: string[]; photoMood: PhotoMood | null }> {
+async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[], groupMonthAfter: number, prevEntryTime: Date | null): Promise<{ flares: string[]; photoMood: PhotoMood | null; photoCaption: string | null }> {
   try {
     const now = (ctx.now ?? (() => new Date()))();
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: ctx.config.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
@@ -135,10 +135,11 @@ async function awardAchievements(ctx: MentionCtx, db: DbBag, rows: LogResultRow[
       });
       if (created) { flares.push(a.flare); earned.push(a); }
     }
-    return { flares, photoMood: photoMoodForAwards(earned, ctx.rng ?? Math.random) };
+    const photo = photoMoodForAwards(earned, ctx.rng ?? Math.random);
+    return { flares, photoMood: photo?.mood ?? null, photoCaption: photo?.caption ?? null };
   } catch (e) {
     console.error("[pumpdragon] achievement detection error:", e);
-    return { flares: [], photoMood: null };
+    return { flares: [], photoMood: null, photoCaption: null };
   }
 }
 
@@ -355,7 +356,7 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     db.getCurrentGoal(ctx.pool, ctx.config.guildId, ctx.config.timezone),
   ]);
   const pm = powerMeter(total, goal);
-  const { flares, photoMood } = await awardAchievements(ctx, db, rows, total, prevEntryTime);
+  const { flares, photoMood, photoCaption } = await awardAchievements(ctx, db, rows, total, prevEntryTime);
 
   const embed = ctx.renderer.logReply({
     loggedBy: ctx.authorName,
@@ -365,8 +366,9 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     powerMeterText: pm.text,
     achievements: flares,
   });
-  // Priority: achievement pic > weak clown on a tiny submission (<10 push/cardio/core) > rare zen drop.
+  // Priority: achievement pic (caption = the unlocked tier name) > weak clown on a tiny submission > zen drop.
   let mood: PhotoMood | null = photoMood;
+  const caption = photoCaption; // set only when the photo is achievement-driven; else random pool phrase
   if (!mood && rows.some((r) => isTinySubmission(r.category, r.quantity))) {
     mood = "weak";
   }
@@ -377,6 +379,7 @@ export async function handleMention(rest: string, ctx: MentionCtx): Promise<Repl
     const hr = ctx.rng ?? Math.random;
     if (hr() < GENERAL_HYPE_CHANCE) mood = hr() < 0.5 ? "roar" : "flex";
   }
-  const photo = mood ? await (ctx.renderPhoto ?? renderPhoto)(mood, ctx.rng ?? Math.random) : null;
+  const rp = ctx.renderPhoto ?? renderPhoto;
+  const photo = !mood ? null : caption ? await rp(mood, ctx.rng ?? Math.random, caption) : await rp(mood, ctx.rng ?? Math.random);
   return photo ? { embed, files: [photo] } : { embed };
 }
